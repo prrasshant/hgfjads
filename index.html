@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>In-House Reporting Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f2f2f2;
+    }
+    h2 {
+      text-align: center;
+    }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+      justify-content: center;
+    }
+    select, input {
+      padding: 8px 12px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    .client-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+    .client-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      width: 300px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 10px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .report-section {
+      margin-top: 30px;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 12px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    canvas {
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>In-House Reporting Dashboard</h2>
+
+  <div class="filter-bar">
+    <select id="countryFilter">
+      <option value="">Filter by Country</option>
+    </select>
+    <select id="payrollFilter">
+      <option value="">Filter by Payroll Area</option>
+    </select>
+    <select id="prepostFilter">
+      <option value="">PRE/POST Filter</option>
+      <option value="pre">PRE</option>
+      <option value="post">POST</option>
+    </select>
+    <input type="text" id="searchClient" placeholder="Search Client">
+  </div>
+
+  <div class="client-container" id="clientContainer"></div>
+
+  <div class="report-section" id="reportSection" style="display:none;">
+    <h3>Client Report</h3>
+    <canvas id="reportChart"></canvas>
+    <p id="reportStats"></p>
+  </div>
+
+  <script>
+    const data = [
+      {
+        Country: "DK", Client: "578", PayrollArea: "M1",
+        PreControlRecord: "Control Record Changed to Released for payroll-01.07.2025",
+        PostControlRecord: "Control Record Changed to Released for payroll-01.07.2025",
+        ControlRecordStats: "Pass",
+        PrePayrollData: "Selected Personal Numbers - 134 ; Succesful Personal Numbers - 132 ; Rejected Personal Numbers - 2 ; Total number of messages and error messages - 10",
+        PrePayrollStats: "undefined",
+        PostPayrollData: "Selected Personal Numbers - 167 ; Succesful Personal Numbers - 165 ; Rejected Personal Numbers - 2 ; Total number of messages and error messages - 5",
+        PostPayrollStats: "undefined",
+        PreVMData: "PERNRS read:328 PY VER:173 PT:PR19426",
+        PreVMStats: "Pass",
+        PostVMData: "GREEN", PostVMStats: "Pass"
+      },
+      {
+        Country: "DK", Client: "596", PayrollArea: "M1",
+        PreControlRecord: "Control Record Changed to Released for payroll-01.07.2025",
+        PostControlRecord: "Control Record Changed to Released for payroll-01.07.2025",
+        ControlRecordStats: "Pass",
+        PrePayrollData: "Selected Personal Numbers - 2167 ; Succesful Personal Numbers - 2154 ; Rejected Personal Numbers - 13 ; Total number of messages and error messages - 246",
+        PrePayrollStats: "undefined",
+        PostPayrollData: "Selected Personal Numbers - 167 ; Succesful Personal Numbers - 165 ; Rejected Personal Numbers - 2 ; Total number of messages and error messages - 5",
+        PostPayrollStats: "undefined",
+        PreVMData: "PERNRS read:2861 PY VER:2154 PT:PR300061",
+        PreVMStats: "Pass",
+        PostVMData: "GREEN", PostVMStats: "Pass"
+      }
+    ];
+
+    const countryFilter = document.getElementById("countryFilter");
+    const payrollFilter = document.getElementById("payrollFilter");
+    const prepostFilter = document.getElementById("prepostFilter");
+    const searchClient = document.getElementById("searchClient");
+    const clientContainer = document.getElementById("clientContainer");
+    const reportSection = document.getElementById("reportSection");
+    const reportChartCanvas = document.getElementById("reportChart");
+    const reportStats = document.getElementById("reportStats");
+
+    function populateFilters() {
+      const countries = [...new Set(data.map(d => d.Country))];
+      const payrolls = [...new Set(data.map(d => d.PayrollArea))];
+      countries.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = c;
+        countryFilter.appendChild(opt);
+      });
+      payrolls.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = p;
+        payrollFilter.appendChild(opt);
+      });
+    }
+
+    function renderClients(filteredData) {
+      clientContainer.innerHTML = "";
+      filteredData.forEach(client => {
+        const div = document.createElement("div");
+        div.className = "client-card";
+        div.innerHTML = `
+          <strong>Country:</strong> ${client.Country}<br>
+          <strong>Client:</strong> ${client.Client}<br>
+          <strong>Payroll Area:</strong> ${client.PayrollArea}<br><br>
+          <strong>PreControl Record:</strong> ${client.PreControlRecord}<br>
+          <strong>PostControl Record:</strong> ${client.PostControlRecord}<br>
+          <strong>ControlRecord Stats:</strong> ${client.ControlRecordStats}<br><br>
+          <strong>PrePayroll Data:</strong> ${client.PrePayrollData}<br>
+          <strong>PrePayroll Stats:</strong> ${client.PrePayrollStats}<br><br>
+          <strong>PostPayroll Data:</strong> ${client.PostPayrollData}<br>
+          <strong>PostPayroll Stats:</strong> ${client.PostPayrollStats}<br><br>
+          <strong>Pre VM Data:</strong> ${client.PreVMData}<br>
+          <strong>Pre VM Stats:</strong> ${client.PreVMStats}<br><br>
+          <strong>Post VM Data:</strong> ${client.PostVMData}<br>
+          <strong>Post VM Stats:</strong> ${client.PostVMStats}<br><br>
+          <button onclick='showReport(${JSON.stringify(client)})'>View Report</button>
+        `;
+        clientContainer.appendChild(div);
+      });
+    }
+
+    function applyFilters() {
+      let filtered = [...data];
+      const country = countryFilter.value;
+      const payroll = payrollFilter.value;
+      const prepost = prepostFilter.value;
+      const search = searchClient.value.toLowerCase();
+
+      if (country) filtered = filtered.filter(d => d.Country === country);
+      if (payroll) filtered = filtered.filter(d => d.PayrollArea === payroll);
+      if (prepost) filtered = filtered.filter(d =>
+        Object.keys(d).some(k => k.toLowerCase().includes(prepost))
+      );
+      if (search) filtered = filtered.filter(d =>
+        d.Client.toString().toLowerCase().includes(search)
+      );
+      renderClients(filtered);
+    }
+
+    function showReport(client) {
+      const statsFields = [
+        client.PrePayrollStats,
+        client.PostPayrollStats,
+        client.PreVMStats,
+        client.PostVMStats
+      ];
+
+      const passCount = statsFields.filter(stat => stat && stat.toLowerCase() === "pass").length;
+      const failCount = statsFields.length - passCount;
+
+      const totalSteps = statsFields.length;
+
+      const ctx = reportChartCanvas.getContext('2d');
+      if (window.myPieChart) window.myPieChart.destroy();
+      window.myPieChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: ['Pass', 'Fail'],
+          datasets: [{
+            data: [passCount, failCount],
+            backgroundColor: ['#28a745', '#dc3545']
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          }
+        }
+      });
+
+      reportStats.innerHTML = `
+        <strong>Client:</strong> ${client.Client} |
+        <strong>Tests Passed:</strong> ${passCount} /
+        <strong>Total Steps:</strong> ${totalSteps}
+      `;
+      reportSection.style.display = "block";
+      reportSection.scrollIntoView({ behavior: "smooth" });
+    }
+
+    // INIT
+    populateFilters();
+    renderClients(data);
+    countryFilter.addEventListener("change", applyFilters);
+    payrollFilter.addEventListener("change", applyFilters);
+    prepostFilter.addEventListener("change", applyFilters);
+    searchClient.addEventListener("input", applyFilters);
+  </script>
+</body>
+</html>
