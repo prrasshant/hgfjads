@@ -1,0 +1,234 @@
+"""
+build_adp_xlsm.py
+
+Prereqs:
+    pip install xlwings openpyxl
+
+Run on Windows with Excel installed and "Trust access to the VBA project object model" enabled in Excel Trust Center.
+"""
+
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import os
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+
+# ---------- VBA code to inject ----------
+VBA_MODULE_NAME = "ADP_Module"
+VBA_CODE = r'''
+Option Explicit
+
+Sub CreateUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    ' Example: read some fields and create a CSV in same folder
+    Dim clientNum As String, compName As String, country As String, language As String
+    clientNum = Trim(ws.Range("B6").Value)
+    compName = Trim(ws.Range("B7").Value)
+    country = Trim(ws.Range("B8").Value)
+    language = Trim(ws.Range("B9").Value)
+    
+    Dim fName As String
+    fName = ThisWorkbook.Path & Application.PathSeparator & "upload_" & clientNum & ".csv"
+    
+    Dim fso As Object, ts As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.CreateTextFile(fName, True, False)
+    
+    ' Header
+    ts.WriteLine "ClientNumber,CompanyName,Country,Language"
+    ts.WriteLine """" & clientNum & """,""" & compName & """,""" & country & """,""" & language & """"
+    ts.Close
+    
+    MsgBox "Upload file created: " & vbCrLf & fName, vbInformation, "Create Upload File"
+End Sub
+
+Sub ImportUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim f As Variant
+    f = Application.GetOpenFilename("CSV Files (*.csv), *.csv", , "Select upload file")
+    If f = False Then Exit Sub
+    
+    ' Simple import: read first data line and paste to Transaction table first row
+    Dim fso As Object, ts As Object, line As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(f, 1, False)
+    Dim header As String
+    If Not ts.AtEndOfStream Then
+        header = ts.ReadLine ' skip header
+    End If
+    If Not ts.AtEndOfStream Then
+        line = ts.ReadLine
+        ts.Close
+        Dim parts As Variant
+        parts = Split(line, ",")
+        ' Put into Transaction Overview area starting at F14 (Record Type, Record Count, Total)
+        ws.Range("F14").Value = Replace(parts(0), """", "")
+        ' For demo, set count and total dummy
+        ws.Range("G14").Value = 1
+        ws.Range("H14").Value = 0
+        MsgBox "Imported first record from file.", vbInformation, "Import"
+    Else
+        MsgBox "No data lines found.", vbExclamation, "Import"
+    End If
+End Sub
+'''
+
+# ---------- Build the workbook using xlwings (automates Excel), then format with openpyxl for advanced styling ----------
+def build_xlsm():
+    # If exists, remove to avoid issues
+    if os.path.exists(OUT_FILE):
+        os.remove(OUT_FILE)
+    
+    # 1) Create new workbook (xlsm) using xlwings, add sheet named "Overview"
+    app = xw.App(visible=False)  # invisible while building
+    try:
+        wb = app.books.add()
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+        
+        # Basic layout (cells referenced in VBA)
+        # Header
+        sht.range("A1").value = "PTD/YTD Results - USA"
+        sht.range("A1:H2").merge()
+        sht.range("A1").api.Font.Size = 18
+        sht.range("A1").api.Font.Bold = True
+        sht.range("A1").color = (46, 125, 50)  # green
+        sht.range("A1").api.Font.Color = 16777215  # white
+        
+        # Client information labels (B6..B9 used in VBA)
+        sht.range("A5").value = "Client Information"
+        sht.range("A6").value = "Client Number:"
+        sht.range("B6").value = ""  # editable
+        sht.range("A7").value = "Company Name:"
+        sht.range("B7").value = ""
+        sht.range("A8").value = "Country:"
+        sht.range("B8").value = ""
+        sht.range("A9").value = "Language:"
+        sht.range("B9").value = ""
+        
+        # Client Contact block (C6.. etc)
+        sht.range("D5").value = "Client Contact"
+        sht.range("D6").value = "Name:"
+        sht.range("E6").value = ""
+        sht.range("D7").value = "Phone Number:"
+        sht.range("E7").value = ""
+        sht.range("D8").value = "Email:"
+        sht.range("E8").value = ""
+        sht.range("D9").value = "ADP Contact:"
+        sht.range("E9").value = ""
+        
+        # Period block (A11..)
+        sht.range("A11").value = "Period"
+        sht.range("A12").value = "Date Received:"
+        sht.range("B12").value = ""
+        sht.range("A13").value = "Date Processed:"
+        sht.range("B13").value = ""
+        
+        # Transaction Overview (F11..H15)
+        sht.range("F11").value = "Transaction Overview"
+        sht.range("F12").value = "Record Type"
+        sht.range("G12").value = "Record Count"
+        sht.range("H12").value = "Total Records"
+        # initial empty row
+        sht.range("F14").value = ""
+        sht.range("G14").value = ""
+        sht.range("H14").value = ""
+        
+        # Buttons: create shapes and attach macro names (macros will be added afterwards)
+        # Button 1
+        btn1 = sht.api.Shapes.AddShape(1, 10, 400, 150, 30)  # msoShapeRectangle=1; left, top, width, height (approx units)
+        btn1.TextFrame.Characters.Text = "Create Upload File"
+        btn1.Fill.ForeColor.RGB = 255 * 256 * 7 + 120 * 256 + 215  ' light blueish; but RGB building is tricky with COM
+        # We'll assign OnAction later after injecting macro
+        
+        # Save as xlsm
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+    
+    # 2) Now open the saved file with openpyxl to apply advanced cell formatting (fonts, fills, borders) (openpyxl reads xlsm too)
+    # Using openpyxl for styles:
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    wb2 = load_workbook(OUT_FILE, keep_vba=True)
+    ws2 = wb2["Overview"]
+    
+    thin = Side(style='thin')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    green_fill = PatternFill("solid", fgColor="2E7D32")
+    gray_fill = PatternFill("solid", fgColor="D9D9D9")
+    
+    # style header
+    ws2.merge_cells("A1:H2")
+    c = ws2["A1"]
+    c.font = Font(bold=True, size=18, color="FFFFFF")
+    c.fill = green_fill
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    
+    # style section titles & labels
+    for cell in ["A5","D5","A11","F11"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = gray_fill
+        ws2[cell].border = border
+    
+    # label cells bold and bordered
+    for r in range(6, 10):
+        ws2[f"A{r}"].font = Font(bold=True)
+        ws2[f"A{r}"].border = border
+        ws2[f"B{r}"].border = border
+        ws2[f"D{r}"].font = Font(bold=True)
+        ws2[f"D{r}"].border = border
+        ws2[f"E{r}"].border = border
+    
+    ws2["A12"].font = Font(bold=True); ws2["A12"].border = border; ws2["B12"].border = border
+    ws2["A13"].font = Font(bold=True); ws2["A13"].border = border; ws2["B13"].border = border
+    
+    # Transaction header styling
+    for ccol in ["F12","G12","H12"]:
+        ws2[ccol].font = Font(bold=True)
+        ws2[ccol].border = border
+    
+    # Save styled xlsm
+    wb2.save(OUT_FILE)
+    wb2.close()
+    
+    # 3) Re-open with xlwings to inject VBA module and assign macros to shapes (requires trust to VB project)
+    app = xw.App(visible=False)
+    try:
+        book = app.books.open(OUT_FILE)
+        # Add module and code
+        vbproj = book.api.VBProject
+        # Add standard module
+        comp = vbproj.VBComponents.Add(1)  # 1 = vbext_ct_StdModule
+        comp.Name = VBA_MODULE_NAME
+        comp.CodeModule.AddFromString(VBA_CODE)
+        
+        # Add shape buttons properly via Excel shapes and assign OnAction to macros
+        sht_x = book.sheets["Overview"]
+        # Add a rectangular shape and assign macro
+        left = 100; top = 300; width = 150; height = 30
+        shape = sht_x.api.Shapes.AddShape(1, left, top, width, height)  # 1=rectangle
+        shape.TextFrame.Characters.Text = "Create Upload File"
+        # assign macro (moduleName.macroName)
+        shape.OnAction = VBA_MODULE_NAME + ".CreateUploadFile"
+        
+        left2 = 300; top2 = 300
+        shape2 = sht_x.api.Shapes.AddShape(1, left2, top2, width, height)
+        shape2.TextFrame.Characters.Text = "Import Upload File"
+        shape2.OnAction = VBA_MODULE_NAME + ".ImportUploadFile"
+        
+        book.save()
+        book.close()
+    finally:
+        app.quit()
+    
+    print("✅ ADP_Interactive_Dashboard.xlsm created at:", OUT_FILE)
+
+if __name__ == "__main__":
+    build_xlsm()
