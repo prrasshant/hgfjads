@@ -1,0 +1,84 @@
+import os
+import win32com.client as win32
+import pythoncom
+
+# === Step 1: Create a blank Excel file ===
+excel_path = os.path.abspath("Excel_Dashboard.xlsm")
+
+# Create basic macro-enabled workbook
+import xlsxwriter
+wb = xlsxwriter.Workbook(excel_path, {'in_memory': True, 'macro_enabled': True})
+ws = wb.add_worksheet("Data")
+ws.write("A1", "Client Name")
+ws.write("A2", "Country")
+ws.write("A3", "Date")
+wb.close()
+
+# === Step 2: VBA code for dashboard ===
+vba_code = r'''
+Private Sub Workbook_Open()
+    Application.Visible = True
+    Application.DisplayFormulaBar = False
+    Application.DisplayStatusBar = False
+    Application.ExecuteExcel4Macro "SHOW.TOOLBAR(""Ribbon"",False)"
+    UserForm1.Show
+End Sub
+
+' --- UserForm1 Code ---
+Private Sub UserForm_Initialize()
+    Me.StartUpPosition = 1
+    
+    cmbCountry.Clear
+    cmbCountry.AddItem "India"
+    cmbCountry.AddItem "USA"
+    cmbCountry.AddItem "UK"
+    cmbCountry.AddItem "Australia"
+    cmbCountry.AddItem "Canada"
+    
+    txtDate.Value = Format(Date, "dd-mmm-yyyy")
+End Sub
+
+Private Sub btnSubmit_Click()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Data")
+    
+    ws.Visible = xlSheetVisible
+    ws.Range("A1").Value = "Client Name"
+    ws.Range("B1").Value = txtClientName.Value
+    ws.Range("A2").Value = "Country"
+    ws.Range("B2").Value = cmbCountry.Value
+    ws.Range("A3").Value = "Date"
+    ws.Range("B3").Value = txtDate.Value
+    ws.Visible = xlSheetVeryHidden
+    
+    MsgBox "✅ Data saved successfully!", vbInformation, "Saved"
+End Sub
+
+Private Sub btnClose_Click()
+    Unload Me
+    Application.DisplayFormulaBar = True
+    Application.DisplayStatusBar = True
+    Application.ExecuteExcel4Macro "SHOW.TOOLBAR(""Ribbon"",True)"
+End Sub
+'''
+
+# === Step 3: Inject VBA into Excel ===
+pythoncom.CoInitialize()
+excel = win32.Dispatch("Excel.Application")
+excel.Visible = False
+wb = excel.Workbooks.Open(excel_path)
+
+# Add a VBA module and paste the code
+vb_module = wb.VBProject.VBComponents.Add(1)  # 1 = vbext_ct_StdModule
+vb_module.CodeModule.AddFromString(vba_code)
+
+# Add UserForm with controls
+uf = wb.VBProject.VBComponents.Add(3)  # 3 = vbext_ct_MSForm
+uf.Name = "UserForm1"
+
+# Save and close
+wb.Save()
+wb.Close()
+excel.Quit()
+
+print(f"✅ Excel dashboard created at: {excel_path}")
