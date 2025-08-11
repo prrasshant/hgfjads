@@ -1,0 +1,253 @@
+# build_excel_gui.py
+# Creates an Excel .xlsm with ActiveX textboxes, checkbox, and buttons wired to VBA macros
+# Requirements: Windows, Excel, pip install xlwings openpyxl
+
+import os
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+
+VBA_MODULE_NAME = "ADP_Module"
+VBA_CODE = r'''
+Option Explicit
+
+Sub CreateUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim txtClientNum As String, txtCompany As String, txtCountry As String, txtLanguage As String
+    txtClientNum = CStr(ws.OLEObjects("txtClientNumber").Object.Text)
+    txtCompany = CStr(ws.OLEObjects("txtCompanyName").Object.Text)
+    txtCountry = CStr(ws.OLEObjects("txtCountry").Object.Text)
+    txtLanguage = CStr(ws.OLEObjects("txtLanguage").Object.Text)
+    
+    ' Create a simple CSV upload file in workbook folder
+    Dim fname As String
+    fname = ThisWorkbook.Path & Application.PathSeparator & "upload_" & txtClientNum & ".csv"
+    
+    Dim fso As Object, ts As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.CreateTextFile(fname, True, False)
+    
+    ts.WriteLine "ClientNumber,CompanyName,Country,Language"
+    ts.WriteLine """" & txtClientNum & """,""" & txtCompany & """,""" & txtCountry & """,""" & txtLanguage & """"
+    ts.Close
+    
+    MsgBox "Upload file created:" & vbCrLf & fname, vbInformation, "Create Upload File"
+End Sub
+
+Sub ImportUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim filePath As Variant
+    filePath = Application.GetOpenFilename("CSV Files (*.csv), *.csv", , "Select CSV to import")
+    If filePath = False Then Exit Sub
+    
+    Dim fso As Object, ts As Object, header As String, line As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(filePath, 1, False)
+    If Not ts.AtEndOfStream Then
+        header = ts.ReadLine
+    End If
+    If Not ts.AtEndOfStream Then
+        line = ts.ReadLine
+        ts.Close
+        Dim items As Variant
+        items = Split(line, ",")
+        ' Put values into transaction area (example: F14..H14)
+        On Error Resume Next
+        ws.Range("F14").Value = Replace(items(0), """", "")
+        ws.Range("G14").Value = Replace(items(1), """", "")
+        ws.Range("H14").Value = Replace(items(2), """", "")
+        On Error GoTo 0
+        MsgBox "Imported first data row into Transaction Overview.", vbInformation, "Import"
+    Else
+        MsgBox "No data found in file.", vbExclamation, "Import"
+    End If
+End Sub
+'''
+
+def build_xlsm():
+    # Remove existing file
+    if os.path.exists(OUT_FILE):
+        os.remove(OUT_FILE)
+
+    # 1) Create workbook using xlwings (so COM objects are available for OLEObjects)
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # Layout: set column widths and hide gridlines visually
+        sht.api.DisplayRightToLeft = False
+        sht.api.Cells(1,1).Value = ""  # ensure sheet created
+        # Set columns A..H widths to create nice layout
+        for i, w in enumerate([3, 20, 20, 3, 20, 20, 20, 20], start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        # Header (merged cells)
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 18
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = (46, 125, 50)  # RGB green background for header
+        sht.range("B2").api.Font.Color = 16777215  # white text
+
+        # Section titles and sample labels
+        sht.range("B5:D5").merge(); sht.range("B5").value = "Client Information"
+        sht.range("B6").value = "Client Number:"; sht.range("C6").value = ""  # placeholder cell under textbox
+        sht.range("B7").value = "Company Name:"; sht.range("C7").value = ""
+        sht.range("B8").value = "Country:"; sht.range("C8").value = ""
+        sht.range("B9").value = "Language:"; sht.range("C9").value = ""
+
+        sht.range("E5:G5").merge(); sht.range("E5").value = "Client Contact"
+        sht.range("E6").value = "Name:"; sht.range("F6").value = ""
+        sht.range("E7").value = "Phone Number:"; sht.range("F7").value = ""
+        sht.range("E8").value = "Email:"; sht.range("F8").value = ""
+        sht.range("E9").value = "ADP Contact:"; sht.range("F9").value = ""
+
+        sht.range("B11:D11").merge(); sht.range("B11").value = "Period"
+        sht.range("B12").value = "Date Received:"; sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("C13").value = ""
+
+        sht.range("E11:G11").merge(); sht.range("E11").value = "Transaction Overview"
+        sht.range("E12").value = "Record Type"; sht.range("F12").value = "Record Count"; sht.range("G12").value = "Total Records"
+        sht.range("E14").value = ""; sht.range("F14").value = ""; sht.range("G14").value = ""
+
+        # Apply basic formatting via Excel COM for nicer look (fonts & bold titles)
+        sht.range("B5").api.Font.Bold = True
+        sht.range("E5").api.Font.Bold = True
+        sht.range("B11").api.Font.Bold = True
+        sht.range("E11").api.Font.Bold = True
+
+        # Hide gridlines for dashboard feel
+        sht.api.Application.ActiveWindow.DisplayGridlines = False
+        sht.api.Application.ActiveWindow.DisplayHeadings = False
+
+        # 2) Add ActiveX Textboxes and CheckBox using OLEObjects.Add
+        # We'll place them visually atop the cells we've prepared.
+        # Helper to get cell left/top in points
+        def cell_left_top(row, col):
+            rng = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+            left = rng.Left
+            top = rng.Top
+            return left, top
+
+        # Add TextBox controls (Forms TextBox ActiveX)
+        # Names must match those used in VBA
+        left, top = cell_left_top(6, 3)  # place near C6
+        tb1 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=200, Height=18)
+        tb1.Name = "txtClientNumber"
+        tb1.Object.Text = ""  # initial text
+
+        left, top = cell_left_top(7, 3)
+        tb2 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=300, Height=18)
+        tb2.Name = "txtCompanyName"
+
+        left, top = cell_left_top(8, 3)
+        tb3 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=150, Height=18)
+        tb3.Name = "txtCountry"
+
+        left, top = cell_left_top(9, 3)
+        tb4 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=150, Height=18)
+        tb4.Name = "txtLanguage"
+
+        # Client contact textboxes
+        left, top = cell_left_top(6, 6)  # F6
+        tb5 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=200, Height=18)
+        tb5.Name = "txtContactName"
+
+        left, top = cell_left_top(7, 6)
+        tb6 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=200, Height=18)
+        tb6.Name = "txtContactPhone"
+
+        left, top = cell_left_top(8, 6)
+        tb7 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=200, Height=18)
+        tb7.Name = "txtContactEmail"
+
+        left, top = cell_left_top(9, 6)
+        tb8 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=200, Height=18)
+        tb8.Name = "txtContactADP"
+
+        # Period textboxes
+        left, top = cell_left_top(12, 3)
+        tb9 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=150, Height=18)
+        tb9.Name = "txtDateReceived"
+
+        left, top = cell_left_top(13, 3)
+        tb10 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=150, Height=18)
+        tb10.Name = "txtDateProcessed"
+
+        # Transaction sample (leave as normal cells or use textboxes as well)
+        # Add check box (ActiveX)
+        left, top = cell_left_top(16, 2)
+        cb = sht.api.OLEObjects().Add(ClassType="Forms.CheckBox.1", Link=False, DisplayAsIcon=False, Left=left, Top=top, Width=150, Height=18)
+        cb.Name = "chkTestRun"
+        cb.Object.Caption = "Test Run (No Update)"
+
+        # 3) Save workbook and close
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    # 4) Add VBA module into the file and add macro & shapes/buttons via xlwings COM
+    app2 = xw.App(visible=False)
+    try:
+        book = app2.books.open(OUT_FILE)
+        vbproj = book.api.VBProject
+        comp = vbproj.VBComponents.Add(1)  # vbext_ct_StdModule
+        comp.Name = VBA_MODULE_NAME
+        comp.CodeModule.AddFromString(VBA_CODE)
+
+        # Add two shapes (buttons) and assign OnAction to macros (this works for Shape buttons)
+        sht_x = book.sheets["Overview"]
+        # coordinates for shapes - adjust as needed
+        left = 300; top = sht_x.range("B16").top; width = 160; height = 24
+        shape1 = sht_x.api.Shapes.AddShape(1, left, top, width, height)  # msoShapeRectangle = 1
+        shape1.TextFrame.Characters.Text = "Create Upload File"
+        shape1.OnAction = VBA_MODULE_NAME + ".CreateUploadFile"
+
+        left2 = 480
+        shape2 = sht_x.api.Shapes.AddShape(1, left2, top, width, height)
+        shape2.TextFrame.Characters.Text = "Import Upload File"
+        shape2.OnAction = VBA_MODULE_NAME + ".ImportUploadFile"
+
+        book.save()
+        book.close()
+    finally:
+        app2.quit()
+
+    # 5) Final check: add cosmetic styling using openpyxl (keep vba)
+    from openpyxl import load_workbook
+    wb2 = load_workbook(OUT_FILE, keep_vba=True)
+    ws2 = wb2["Overview"]
+
+    thin = Side(style='thin', color='000000')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    green_fill = PatternFill("solid", fgColor="2E7D32")
+
+    ws2.merge_cells("B2:G3")
+    c = ws2["B2"]
+    c.font = Font(bold=True, size=18, color="FFFFFF")
+    c.fill = green_fill
+    c.alignment = Alignment(horizontal="center", vertical="center")
+
+    # style section titles
+    for cell in ["B5","E5","B11","E11"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = PatternFill("solid", fgColor="D9D9D9")
+        ws2[cell].border = border
+
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    print("✅ ADP_Interactive_Dashboard.xlsm created at:", OUT_FILE)
+
+
+if __name__ == "__main__":
+    build_xlsm()
