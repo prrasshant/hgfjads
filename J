@@ -1,0 +1,232 @@
+# excel_overlay_pyqt.py
+# Requirements:
+#   pip install xlwings PyQt5
+# Run on Windows with Excel installed.
+
+import sys
+import ctypes
+from ctypes import wintypes
+import xlwings as xw
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtCore import Qt
+
+# ---------- Win32 helpers (ctypes) ----------
+user32 = ctypes.windll.user32
+
+GetWindowRect = user32.GetWindowRect
+GetClientRect = user32.GetClientRect
+ClientToScreen = user32.ClientToScreen
+
+GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+GetWindowRect.restype = wintypes.BOOL
+
+GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+GetClientRect.restype = wintypes.BOOL
+
+ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+ClientToScreen.restype = wintypes.BOOL
+
+# ---------- Utility: get Excel client area in screen coords ----------
+def get_excel_client_rect(hwnd):
+    """Return (left, top, right, bottom) of Excel client area in screen coordinates."""
+    rect_client = wintypes.RECT()
+    if not GetClientRect(wintypes.HWND(hwnd), ctypes.byref(rect_client)):
+        return None
+    # rect_client has (left=0, top=0, right=width, bottom=height)
+    # Convert client origin to screen coordinates:
+    pt = wintypes.POINT(rect_client.left, rect_client.top)
+    if not ClientToScreen(wintypes.HWND(hwnd), ctypes.byref(pt)):
+        return None
+    left = pt.x
+    top = pt.y
+    right = left + (rect_client.right - rect_client.left)
+    bottom = top + (rect_client.bottom - rect_client.top)
+    return (left, top, right, bottom)
+
+# ---------- Build PyQt GUI (your layout) ----------
+class ADPOverviewApp(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Remove window frame? keep it so user can move if needed.
+        # self.setWindowFlags(Qt.FramelessWindowHint)  # optional
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setStyleSheet("background-color: #f4f4f4;")
+        self.initUI()
+
+    def initUI(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        # Header
+        header = QtWidgets.QLabel("PTD/YTD Results - USA")
+        header.setFont(QtGui.QFont("Arial", 20, QtGui.QFont.Bold))
+        header.setAlignment(Qt.AlignCenter)
+        header.setStyleSheet("color: white; background-color: #2e7d32; padding: 12px;")
+        layout.addWidget(header)
+
+        container = QtWidgets.QFrame()
+        container.setStyleSheet("background-color: white; border: 2px solid #cccccc; border-radius: 8px;")
+        container_layout = QtWidgets.QGridLayout(container)
+
+        # Client Info
+        client_info = QtWidgets.QGroupBox("Client Information")
+        client_layout = QtWidgets.QFormLayout()
+        self.client_number = QtWidgets.QLineEdit()
+        self.company_name = QtWidgets.QLineEdit()
+        self.country = QtWidgets.QLineEdit()
+        self.language = QtWidgets.QLineEdit()
+        client_layout.addRow("Client Number:", self.client_number)
+        client_layout.addRow("Company Name:", self.company_name)
+        client_layout.addRow("Country:", self.country)
+        client_layout.addRow("Language:", self.language)
+        client_info.setLayout(client_layout)
+
+        # Contact Info
+        contact_info = QtWidgets.QGroupBox("Client Contact")
+        contact_layout = QtWidgets.QFormLayout()
+        self.contact_name = QtWidgets.QLineEdit()
+        self.phone = QtWidgets.QLineEdit()
+        self.email = QtWidgets.QLineEdit()
+        self.adp_contact = QtWidgets.QLineEdit()
+        contact_layout.addRow("Name:", self.contact_name)
+        contact_layout.addRow("Phone Number:", self.phone)
+        contact_layout.addRow("Email:", self.email)
+        contact_layout.addRow("ADP Contact:", self.adp_contact)
+        contact_info.setLayout(contact_layout)
+
+        # Period
+        period_info = QtWidgets.QGroupBox("Period")
+        period_layout = QtWidgets.QFormLayout()
+        self.date_received = QtWidgets.QLineEdit()
+        self.date_processed = QtWidgets.QLineEdit()
+        period_layout.addRow("Date Received:", self.date_received)
+        period_layout.addRow("Date Processed:", self.date_processed)
+        period_info.setLayout(period_layout)
+
+        # Transaction Overview
+        trans_info = QtWidgets.QGroupBox("Transaction Overview")
+        trans_layout = QtWidgets.QFormLayout()
+        self.record_type = QtWidgets.QLineEdit()
+        self.record_count = QtWidgets.QLineEdit()
+        self.total_records = QtWidgets.QLineEdit()
+        trans_layout.addRow("Record Type:", self.record_type)
+        trans_layout.addRow("Record Count:", self.record_count)
+        trans_layout.addRow("Total Records:", self.total_records)
+        trans_info.setLayout(trans_layout)
+
+        # Buttons
+        button_frame = QtWidgets.QFrame()
+        button_layout = QtWidgets.QHBoxLayout(button_frame)
+        self.test_checkbox = QtWidgets.QCheckBox("Test Run (No Update)")
+        self.upload_btn = QtWidgets.QPushButton("Create Upload File")
+        self.import_btn = QtWidgets.QPushButton("Import Upload File")
+        for btn in [self.upload_btn, self.import_btn]:
+            btn.setStyleSheet("background-color: #0078D7; color: white; font-weight: bold; padding: 8px;")
+        button_layout.addWidget(self.test_checkbox)
+        button_layout.addStretch()
+        button_layout.addWidget(self.upload_btn)
+        button_layout.addWidget(self.import_btn)
+
+        # wire example: write inputs into excel sheet when upload clicked (callback will be set externally)
+        # Layout assignment
+        container_layout.addWidget(client_info, 0, 0)
+        container_layout.addWidget(contact_info, 0, 1)
+        container_layout.addWidget(period_info, 1, 0)
+        container_layout.addWidget(trans_info, 1, 1)
+        container_layout.addWidget(button_frame, 2, 0, 1, 2)
+        layout.addWidget(container)
+
+# ---------- Main: open Excel + launch GUI + sync position ----------
+def main():
+    # 1) Open Excel via xlwings and prepare sheet (visible)
+    app_xl = xw.App(visible=True)
+    wb = app_xl.books.add()  # new workbook
+    sht = wb.sheets[0]
+    sht.name = "Overview"
+
+    # cosmetic: hide gridlines and headings to create blank canvas feel
+    try:
+        app_xl.api.ActiveWindow.DisplayGridlines = False
+        app_xl.api.ActiveWindow.DisplayHeadings = False
+    except Exception:
+        pass
+
+    # set some cells as placeholders (optional)
+    sht.range("A1").value = "PTD/YTD Results - USA"
+    sht.range("A1").api.Font.Size = 18
+    sht.range("A1").api.Font.Bold = True
+
+    # Get excel window hwnd
+    try:
+        excel_hwnd = int(app_xl.api.Hwnd)
+    except Exception:
+        excel_hwnd = None
+
+    if not excel_hwnd:
+        print("Could not determine Excel HWND. The overlay will still open but won't auto-align.")
+    else:
+        print("Excel HWND:", excel_hwnd)
+
+    # 2) Start Qt application and GUI
+    qt_app = QtWidgets.QApplication(sys.argv)
+    gui = ADPOverviewApp()
+    gui.resize(900, 600)
+    gui.show()
+    qt_app.processEvents()
+
+    # Optional: wire GUI buttons to write into Excel (so it is interactive)
+    def on_upload():
+        try:
+            sht.range("B6").value = gui.client_number.text()
+            sht.range("B7").value = gui.company_name.text()
+            sht.range("B8").value = gui.country.text()
+            sht.range("B9").value = gui.language.text()
+            sht.range("F6").value = gui.contact_name.text()
+            sht.range("F7").value = gui.phone.text()
+            sht.range("F8").value = gui.email.text()
+            sht.range("F9").value = gui.adp_contact.text()
+            sht.range("B12").value = gui.date_received.text()
+            sht.range("B13").value = gui.date_processed.text()
+            sht.range("F14").value = gui.record_type.text()
+            sht.range("G14").value = gui.record_count.text()
+            sht.range("H14").value = gui.total_records.text()
+            xw.apps.active.api.ActiveWorkbook.Save()  # optional: save
+            QtWidgets.QMessageBox.information(gui, "Saved", "Values written to Excel.")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(gui, "Error", f"Could not write to Excel: {e}")
+
+    def on_import():
+        # simple demo: read B6 (client number) and fill a field
+        try:
+            val = sht.range("B6").value
+            QtWidgets.QMessageBox.information(gui, "Import demo", f"Client Number in Excel: {val}")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(gui, "Error", f"Could not read Excel: {e}")
+
+    gui.upload_btn.clicked.connect(on_upload)
+    gui.import_btn.clicked.connect(on_import)
+
+    # 3) If we have excel_hwnd, start a QTimer to poll Excel client rect and move/resize GUI
+    if excel_hwnd:
+        def sync_position():
+            rect = get_excel_client_rect(excel_hwnd)
+            if rect:
+                left, top, right, bottom = rect
+                # Choose offsets to leave some margin from edges (tweak as needed)
+                margin_left = 8
+                margin_top = 6
+                margin_right = 8
+                margin_bottom = 20
+                target_left = left + margin_left
+                target_top = top + margin_top
+                target_w = max(200, right - left - (margin_left + margin_right))
+                target_h = max(200, bottom - top - (margin_top + margin_bottom))
+                # Move and resize the Qt window
+                gui.setGeometry(target_left, target_top, target_w, target_h)
+        timer = QtCore.QTimer()
+        timer.timeout.connect(sync_position)
+        timer.start(250)  # poll every 250 ms
+
+    # 4) Exec Qt event loop
+    sys.exit(qt_app.exec_())
+
+if __name__ == "__main__":
+    main()
