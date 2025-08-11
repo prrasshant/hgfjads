@@ -1,0 +1,100 @@
+from PyQt5 import QtWidgets, QtGui
+import sys
+import io
+from PIL import Image
+import xlsxwriter
+
+class ADPOverviewApp(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(100, 100, 1000, 600)
+        self.setStyleSheet("background-color: #f4f4f4;")
+        self.initUI()
+
+    def initUI(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Header
+        header = QtWidgets.QLabel("PTD/YTD Results - USA")
+        header.setFont(QtGui.QFont("Arial", 20, QtGui.QFont.Bold))
+        header.setAlignment(QtGui.Qt.AlignCenter)
+        header.setStyleSheet("color: white; background-color: #2e7d32; padding: 15px;")
+        layout.addWidget(header)
+
+        container = QtWidgets.QFrame()
+        container.setStyleSheet("background-color: white; border: 2px solid #cccccc; border-radius: 10px;")
+        container_layout = QtWidgets.QGridLayout(container)
+
+        # Groups
+        def group(title, fields):
+            g = QtWidgets.QGroupBox(title)
+            fl = QtWidgets.QFormLayout()
+            for f in fields:
+                fl.addRow(f, QtWidgets.QLineEdit())
+            g.setLayout(fl)
+            return g
+
+        client_info = group("Client Information", ["Client Number:", "Company Name:", "Country:", "Language:"])
+        contact_info = group("Client Contact", ["Name:", "Phone Number:", "Email:", "ADP Contact:"])
+        period_info = group("Period", ["Date Received:", "Date Processed:"])
+        trans_info = group("Transaction Overview", ["Record Type:", "Record Count:", "Total Records:"])
+
+        # Buttons
+        button_frame = QtWidgets.QFrame()
+        button_layout = QtWidgets.QHBoxLayout(button_frame)
+        test_checkbox = QtWidgets.QCheckBox("Test Run (No Update)")
+        upload_btn = QtWidgets.QPushButton("Create Upload File")
+        import_btn = QtWidgets.QPushButton("Import Upload File")
+        for btn in [upload_btn, import_btn]:
+            btn.setStyleSheet("background-color: #0078D7; color: white; font-weight: bold; padding: 10px;")
+        button_layout.addWidget(test_checkbox)
+        button_layout.addStretch()
+        button_layout.addWidget(upload_btn)
+        button_layout.addWidget(import_btn)
+
+        container_layout.addWidget(client_info, 0, 0)
+        container_layout.addWidget(contact_info, 0, 1)
+        container_layout.addWidget(period_info, 1, 0)
+        container_layout.addWidget(trans_info, 1, 1)
+        container_layout.addWidget(button_frame, 2, 0, 1, 2)
+
+        layout.addWidget(container)
+
+def save_gui_as_excel():
+    app = QtWidgets.QApplication(sys.argv)
+    gui = ADPOverviewApp()
+    gui.show()
+
+    # Grab GUI as image
+    pixmap = gui.grab()
+    buffer = QtCore.QBuffer()
+    buffer.open(QtCore.QBuffer.ReadWrite)
+    pixmap.save(buffer, "PNG")
+    img_data = buffer.data()
+
+    # Convert to Pillow Image
+    image = Image.open(io.BytesIO(img_data))
+
+    # Save to Excel
+    workbook = xlsxwriter.Workbook("ADP_Dashboard.xlsx")
+    worksheet = workbook.add_worksheet()
+
+    # Hide gridlines and rows/cols
+    worksheet.hide_gridlines(2)
+    worksheet.set_default_row(0)
+    for col in range(50):
+        worksheet.set_column(col, col, None, None, {'hidden': True})
+    for row in range(100):
+        worksheet.set_row(row, None, None, {'hidden': True})
+
+    # Insert image at cell A1
+    img_bytes = io.BytesIO()
+    image.save(img_bytes, format='PNG')
+    worksheet.insert_image('A1', 'dashboard.png', {'image_data': img_bytes})
+
+    workbook.close()
+    print("Excel dashboard saved as ADP_Dashboard.xlsx")
+
+if __name__ == "__main__":
+    save_gui_as_excel()
