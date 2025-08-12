@@ -1,0 +1,110 @@
+from PyQt5 import QtWidgets, QtGui, QtCore
+import sys
+
+class Overview(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("📊 PTD/YTD Results - USA")
+        self.setGeometry(200, 100, 1000, 700)
+        self.setStyleSheet("background-color: #f4f6f8; font-family: Arial; font-size: 14px;")
+        self.initUI()
+
+    def initUI(self):
+        main_layout = QtWidgets.QVBoxLayout(self)
+
+        # Header
+        header = QtWidgets.QLabel("PTD/YTD Results - USA")
+        header.setAlignment(QtCore.Qt.AlignCenter)
+        header.setFont(QtGui.QFont("Arial", 20, QtGui.QFont.Bold))
+        header.setStyleSheet("color: white; background-color: #0078D7; padding: 15px; border-radius: 8px;")
+        main_layout.addWidget(header)
+
+        # Container Frame
+        container = QtWidgets.QFrame()
+        container.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 8px; padding: 20px;")
+        container_layout = QtWidgets.QGridLayout(container)
+
+        # Client Info
+        client_info = QtWidgets.QGroupBox("Client Information")
+        client_info.setStyleSheet("font-weight: bold; color: #333;")
+        client_layout = QtWidgets.QFormLayout()
+        client_layout.setSpacing(12)
+        client_layout.addRow("Client Number:", QtWidgets.QLineEdit())
+        client_layout.addRow("Company Name:", QtWidgets.QLineEdit())
+        client_layout.addRow("Country:", QtWidgets.QLineEdit())
+        client_layout.addRow("Language:", QtWidgets.QLineEdit())
+        client_info.setLayout(client_layout)
+
+        # Contact Info
+        contact_info = QtWidgets.QGroupBox("Client Contact")
+        contact_info.setStyleSheet("font-weight: bold; color: #333;")
+        contact_layout = QtWidgets.QFormLayout()
+        contact_layout.setSpacing(12)
+        contact_layout.addRow("Name:", QtWidgets.QLineEdit())
+        contact_layout.addRow("Phone Number:", QtWidgets.QLineEdit())
+        contact_layout.addRow("Email:", QtWidgets.QLineEdit())
+        contact_layout.addRow("ADP Contact:", QtWidgets.QLineEdit())
+        contact_info.setLayout(contact_layout)
+
+        # Period Info
+        period_info = QtWidgets.QGroupBox("Period")
+        period_info.setStyleSheet("font-weight: bold; color: #333;")
+        period_layout = QtWidgets.QFormLayout()
+        period_layout.setSpacing(12)
+        period_layout.addRow("Date Received:", QtWidgets.QLineEdit())
+        period_layout.addRow("Date Processed:", QtWidgets.QLineEdit())
+        period_info.setLayout(period_layout)
+
+        # Transaction Info
+        trans_info = QtWidgets.QGroupBox("Transaction Overview")
+        trans_info.setStyleSheet("font-weight: bold; color: #333;")
+        trans_layout = QtWidgets.QFormLayout()
+        trans_layout.setSpacing(12)
+        trans_layout.addRow("Record Type:", QtWidgets.QLineEdit())
+        trans_layout.addRow("Record Count:", QtWidgets.QLineEdit())
+        trans_layout.addRow("Total Records:", QtWidgets.QLineEdit())
+        trans_info.setLayout(trans_layout)
+
+        # Buttons
+        button_frame = QtWidgets.QFrame()
+        button_layout = QtWidgets.QHBoxLayout(button_frame)
+        button_layout.addStretch()
+
+        style_btn = """
+            QPushButton {
+                background-color: #0078D7;
+                color: white;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #005a9e;
+            }
+        """
+
+        upload_btn = QtWidgets.QPushButton("Create Upload File")
+        upload_btn.setStyleSheet(style_btn)
+        import_btn = QtWidgets.QPushButton("Import Upload File")
+        import_btn.setStyleSheet(style_btn)
+        
+        button_layout.addWidget(upload_btn)
+        button_layout.addWidget(import_btn)
+
+        # Arrange in Grid
+        container_layout.addWidget(client_info, 0, 0)
+        container_layout.addWidget(contact_info, 0, 1)
+        container_layout.addWidget(period_info, 1, 0)
+        container_layout.addWidget(trans_info, 1, 1)
+        container_layout.addWidget(button_frame, 2, 0, 1, 2)
+
+        main_layout.addWidget(container)
+
+def run_app():
+    app = QtWidgets.QApplication(sys.argv)
+    window = Overview()
+    window.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    run_app()
