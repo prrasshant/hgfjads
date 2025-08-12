@@ -1,0 +1,91 @@
+import xlwings as xw
+import os
+
+VBA_MODULE_NAME = "DashboardMacros"
+
+def build_xlsm(file_path):
+    # Remove existing file
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    # Create workbook
+    wb = xw.Book()
+    sht = wb.sheets[0]
+    sht.name = "Overview"
+
+    # Set some column widths & row heights
+    sht.range("A1:Z50").column_width = 15
+    sht.range("A1:Z50").row_height = 18
+
+    # Helper to get top/left coords of a cell
+    def cell_left_top(row, col):
+        cell = sht.range((row, col))
+        return cell.left, cell.top
+
+    # ======== 1. ONE BIG CONTAINER BOX ========
+    box_left, box_top = cell_left_top(2, 2)
+    box_width = sht.range("B2:G16").width
+    box_height = sht.range("B2:G16").height
+    dashboard_box = sht.api.Shapes.AddShape(1, box_left - 5, box_top - 5,
+                                            box_width + 10, box_height + 10)
+    dashboard_box.Fill.ForeColor.RGB = 0xF4F6F6  # light gray
+    dashboard_box.Line.ForeColor.RGB = 0x999999
+    dashboard_box.ZOrder(1)  # Send to back
+
+    # ======== 2. ActiveX TEXTBOXES ========
+    names = [
+        ("txtClientNumber", 6, 3, 220),
+        ("txtCompanyName", 7, 3, 320),
+        ("txtCountry", 8, 3, 160),
+        ("txtLanguage", 9, 3, 160),
+        ("txtContactName", 6, 6, 220),
+        ("txtContactPhone", 7, 6, 220),
+        ("txtContactEmail", 8, 6, 220),
+        ("txtContactADP", 9, 6, 220),
+        ("txtDateReceived", 12, 3, 160),
+        ("txtDateProcessed", 13, 3, 160)
+    ]
+    for name, r, c, w in names:
+        left, top = cell_left_top(r, c)
+        tb = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                      Left=left+2, Top=top+2, Width=w, Height=18)
+        tb.Name = name
+
+    # ======== 3. CHECKBOX ========
+    left, top = cell_left_top(16, 2)
+    chk = sht.api.OLEObjects().Add(ClassType="Forms.CheckBox.1", Link=False, DisplayAsIcon=False,
+                                   Left=left+2, Top=top+2, Width=220, Height=18)
+    chk.Name = "chkTestRun"
+    chk.Object.Caption = "Test Run (No Update)"
+
+    # ======== 4. CLICKABLE BUTTONS ========
+    btn1_left, btn1_top = cell_left_top(15, 2)
+    btn1_width, btn_height = 150, 28
+    btn1 = sht.api.Buttons().Add(btn1_left, btn1_top, btn1_width, btn_height)
+    btn1.Text = "Create Upload File"
+    btn1.OnAction = VBA_MODULE_NAME + ".CreateUploadFile"
+
+    btn2_left = btn1_left + btn1_width + 20
+    btn2 = sht.api.Buttons().Add(btn2_left, btn1_top, btn1_width, btn_height)
+    btn2.Text = "Import Upload File"
+    btn2.OnAction = VBA_MODULE_NAME + ".ImportUploadFile"
+
+    # ======== 5. ADD VBA MACROS ========
+    vba_code = f"""
+Sub CreateUploadFile()
+    MsgBox "Create Upload File clicked!"
+End Sub
+
+Sub ImportUploadFile()
+    MsgBox "Import Upload File clicked!"
+End Sub
+"""
+    wb.api.VBProject.VBComponents.Add(1).Name = VBA_MODULE_NAME
+    wb.api.VBProject.VBComponents(VBA_MODULE_NAME).CodeModule.AddFromString(vba_code)
+
+    # Save as XLSM
+    wb.save(file_path)
+    wb.close()
+
+# Example usage
+build_xlsm("Dashboard_Overview.xlsm")
