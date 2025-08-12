@@ -1,0 +1,139 @@
+import sys
+from PyQt5 import QtWidgets, QtGui, QtCore
+
+class PTDYTDApp(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(200, 100, 900, 600)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f5f7fa;
+                font-family: Segoe UI;
+                font-size: 10pt;
+            }
+            QGroupBox {
+                font-weight: bold;
+                font-size: 11pt;
+                border: 2px solid #d1d9e6;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding: 8px;
+                background-color: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px;
+                color: #2c3e50;
+            }
+            QPushButton {
+                background-color: #34495e;
+                color: white;
+                padding: 6px 14px;
+                border-radius: 4px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #2c3e50;
+            }
+            QTableWidget {
+                background-color: white;
+                border: 1px solid #ccc;
+                gridline-color: #ccc;
+            }
+        """)
+
+        main_layout = QtWidgets.QVBoxLayout()
+
+        # Header
+        header = QtWidgets.QLabel("PTD/YTD Results - USA")
+        header.setFont(QtGui.QFont("Segoe UI", 14, QtGui.QFont.Bold))
+        header.setAlignment(QtCore.Qt.AlignCenter)
+        header.setStyleSheet("color: white; background-color: #2c3e50; padding: 10px; border-radius: 6px;")
+        main_layout.addWidget(header)
+
+        # Client Info and Contact Section
+        top_layout = QtWidgets.QHBoxLayout()
+
+        client_info = self.create_groupbox("Client Information", [
+            ("Client Number:", self.create_plain_label()),
+            ("Company Name:", self.create_plain_label()),
+            ("Country:", self.create_static_label("USA")),
+            ("Language:", self.create_static_label("English"))
+        ])
+
+        contact_info = self.create_groupbox("Client Contact", [
+            ("Name:", self.create_plain_label()),
+            ("Phone Number:", self.create_plain_label()),
+            ("Email:", self.create_plain_label()),
+            ("ADP Contact:", self.create_plain_label())
+        ])
+
+        top_layout.addWidget(client_info)
+        top_layout.addWidget(contact_info)
+        main_layout.addLayout(top_layout)
+
+        # Period Section
+        period_info = self.create_groupbox("Period", [
+            ("Date Received:", self.create_plain_label()),
+            ("Date Processed:", self.create_plain_label())
+        ])
+        main_layout.addWidget(period_info)
+
+        # Transaction Overview Section
+        transaction_box = QtWidgets.QGroupBox("Transaction Overview")
+        transaction_layout = QtWidgets.QVBoxLayout()
+
+        self.table = QtWidgets.QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["Record Type", "Record Count"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        transaction_layout.addWidget(self.table)
+
+        total_layout = QtWidgets.QHBoxLayout()
+        total_layout.addStretch()
+        total_label = QtWidgets.QLabel("Total Records:")
+        total_label.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+        total_label.setStyleSheet("background: none; border: none;")
+        self.total_count = self.create_plain_label()
+        total_layout.addWidget(total_label)
+        total_layout.addWidget(self.total_count)
+        transaction_layout.addLayout(total_layout)
+
+        transaction_box.setLayout(transaction_layout)
+        main_layout.addWidget(transaction_box)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(QtWidgets.QPushButton("Active Excel Sheet"))
+        button_layout.addWidget(QtWidgets.QPushButton("Create Upload File"))
+        button_layout.addWidget(QtWidgets.QPushButton("Import Upload File"))
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+
+    def create_groupbox(self, title, rows):
+        box = QtWidgets.QGroupBox(title)
+        layout = QtWidgets.QFormLayout()
+        for label, widget in rows:
+            layout.addRow(QtWidgets.QLabel(label), widget)
+        box.setLayout(layout)
+        return box
+
+    def create_plain_label(self, text=""):
+        label = QtWidgets.QLabel(text)
+        label.setStyleSheet("background: none; border: none; padding: 2px;")
+        return label
+
+    def create_static_label(self, text):
+        label = QtWidgets.QLabel(text)
+        label.setStyleSheet("background-color: #ecf0f1; padding: 4px; border-radius: 3px;")
+        return label
+
+
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = PTDYTDApp()
+    window.show()
+    sys.exit(app.exec_())
