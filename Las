@@ -1,0 +1,224 @@
+from PyQt5 import QtWidgets, QtGui, QtCore
+import sys
+import pandas as pd
+import math
+
+class Overview(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(100, 100, 1150, 750)
+
+        # Glassmorphism Theme
+        self.setStyleSheet("""
+            QWidget {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                                  stop:0 #e0eafc, stop:1 #cfdef3);
+                font-family: Segoe UI, Arial;
+                font-size: 14px;
+            }
+            QGroupBox {
+                background: rgba(255, 255, 255, 0.55);
+                border-radius: 15px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                padding: 15px;
+                font-weight: bold;
+                color: #0f172a;
+                margin-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 10px;
+                font-size: 15px;
+                color: #1e3a8a;
+            }
+            QLineEdit {
+                background: rgba(255, 255, 255, 0.8);
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+                padding: 6px;
+                color: #1e293b;
+            }
+            QLineEdit[readonly="true"] {
+                background: rgba(240, 240, 240, 0.7);
+                color: #475569;
+            }
+            QPushButton {
+                background-color: #2563eb;
+                color: white;
+                font-weight: bold;
+                padding: 10px 18px;
+                border-radius: 8px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #1e40af;
+            }
+            QTableWidget {
+                background: rgba(255, 255, 255, 0.75);
+                border-radius: 10px;
+                gridline-color: rgba(0,0,0,0.05);
+            }
+            QHeaderView::section {
+                background-color: #1d4ed8;
+                color: white;
+                padding: 6px;
+                border: none;
+                border-radius: 4px;
+            }
+            QTableWidget::item:hover {
+                background-color: rgba(37, 99, 235, 0.15);
+            }
+        """)
+
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+
+        # Animated Gradient Header
+        self.header_bar = QtWidgets.QFrame()
+        self.header_bar.setFixedHeight(90)
+        self.header_bar.setStyleSheet("QFrame { border-radius: 15px; }")
+        header_layout = QtWidgets.QHBoxLayout(self.header_bar)
+        header_layout.setContentsMargins(20, 0, 20, 0)
+
+        # Title
+        self.title_label = QtWidgets.QLabel("PTD/YTD Results - USA")
+        self.title_label.setFont(QtGui.QFont("Segoe UI", 28, QtGui.QFont.Bold))
+        self.title_label.setStyleSheet("color: white;")
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
+
+        main_layout.addWidget(self.header_bar)
+
+        # Client Info Section
+        client_info = QtWidgets.QGroupBox("Client Information")
+        client_layout = QtWidgets.QFormLayout()
+        client_layout.addRow("Client Number:", QtWidgets.QLineEdit())
+        client_layout.addRow("Company Name:", QtWidgets.QLineEdit())
+
+        country_field = QtWidgets.QLineEdit("USA")
+        country_field.setReadOnly(True)
+        country_field.setProperty("readonly", True)
+        client_layout.addRow("Country:", country_field)
+
+        language_field = QtWidgets.QLineEdit("English")
+        language_field.setReadOnly(True)
+        language_field.setProperty("readonly", True)
+        client_layout.addRow("Language:", language_field)
+
+        client_info.setLayout(client_layout)
+        main_layout.addWidget(client_info)
+
+        # Contact Info Section
+        contact_info = QtWidgets.QGroupBox("Client Contact")
+        contact_layout = QtWidgets.QFormLayout()
+        contact_layout.addRow("Name:", QtWidgets.QLineEdit())
+        contact_layout.addRow("Phone Number:", QtWidgets.QLineEdit())
+        contact_layout.addRow("Email:", QtWidgets.QLineEdit())
+        contact_layout.addRow("ADP Contact:", QtWidgets.QLineEdit())
+        contact_info.setLayout(contact_layout)
+        main_layout.addWidget(contact_info)
+
+        # Period Section
+        period_info = QtWidgets.QGroupBox("Period")
+        period_layout = QtWidgets.QFormLayout()
+        period_layout.addRow("Date Received:", QtWidgets.QLineEdit())
+        period_layout.addRow("Date Processed:", QtWidgets.QLineEdit())
+        period_info.setLayout(period_layout)
+        main_layout.addWidget(period_info)
+
+        # Transaction Overview Section
+        trans_info = QtWidgets.QGroupBox("Transaction Overview")
+        trans_layout = QtWidgets.QVBoxLayout()
+
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Record Type", "Record Count"])
+        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.table.setAlternatingRowColors(True)
+
+        trans_layout.addWidget(self.table)
+
+        # Total Records Label with Animation
+        self.total_records_label = QtWidgets.QLabel("Total Records: 0")
+        self.total_records_label.setFont(QtGui.QFont("Segoe UI", 14, QtGui.QFont.Bold))
+        self.total_records_label.setStyleSheet("color: #b45309; padding-top: 8px;")
+        trans_layout.addWidget(self.total_records_label)
+
+        trans_info.setLayout(trans_layout)
+        main_layout.addWidget(trans_info)
+
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.test_checkbox = QtWidgets.QCheckBox("Test Run (No Update)")
+        btn_layout.addWidget(self.test_checkbox)
+        btn_layout.addStretch()
+
+        self.active_excel_btn = QtWidgets.QPushButton("Active Excel Sheet")
+        self.active_excel_btn.clicked.connect(self.load_excel)
+        btn_layout.addWidget(self.active_excel_btn)
+
+        upload_btn = QtWidgets.QPushButton("Create Upload File")
+        btn_layout.addWidget(upload_btn)
+
+        import_btn = QtWidgets.QPushButton("Import Upload File")
+        btn_layout.addWidget(import_btn)
+
+        main_layout.addLayout(btn_layout)
+
+        # Start gradient animation
+        self.gradient_timer = QtCore.QTimer()
+        self.gradient_timer.timeout.connect(self.animate_header)
+        self.gradient_timer.start(50)
+        self.hue = 0
+
+    def animate_header(self):
+        self.hue = (self.hue + 1) % 360
+        color1 = QtGui.QColor.fromHsv(self.hue, 180, 255)
+        color2 = QtGui.QColor.fromHsv((self.hue + 60) % 360, 180, 255)
+        self.header_bar.setStyleSheet(f"""
+            QFrame {{
+                border-radius: 15px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 {color1.name()},
+                                            stop:1 {color2.name()});
+            }}
+        """)
+
+    def load_excel(self):
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Excel File", "", "Excel Files (*.xlsx *.xls)")
+        if file_path:
+            df = pd.read_excel(file_path)
+
+            self.table.setRowCount(len(df))
+            for row in range(len(df)):
+                self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(df.iloc[row, 0])))
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(df.iloc[row, 1])))
+
+            # Animated total count
+            self.animate_total_count(len(df))
+
+    def animate_total_count(self, final_count):
+        self.current_count = 0
+        self.target_count = final_count
+        self.count_timer = QtCore.QTimer()
+        self.count_timer.timeout.connect(self.update_count)
+        self.count_timer.start(15)
+
+    def update_count(self):
+        if self.current_count < self.target_count:
+            self.current_count += max(1, math.ceil((self.target_count - self.current_count) / 10))
+            self.total_records_label.setText(f"Total Records: {self.current_count}")
+        else:
+            self.count_timer.stop()
+
+def run_app():
+    app = QtWidgets.QApplication(sys.argv)
+    main_win = Overview()
+    main_win.show()
+    app.exec_()
+
+if __name__ == "__main__":
+    run_app()
