@@ -1,0 +1,72 @@
+import win32com.client as win32
+
+# Launch Excel
+excel = win32.Dispatch("Excel.Application")
+excel.Visible = True
+
+# Create a new workbook
+wb = excel.Workbooks.Add()
+ws = wb.Sheets(1)
+ws.Name = "Overview"
+
+# Set zoom for better viewing
+ws.Zoom = 90
+
+# -----------------------------
+# 1. Draw big background container box
+# -----------------------------
+container = ws.Shapes.AddShape(5, 20, 20, 700, 400)  # Rounded rectangle
+container.Fill.ForeColor.RGB = 0xE6F3FF  # Light blue
+container.Line.ForeColor.RGB = 0x007ACC  # Blue border
+container.Line.Weight = 2.5
+container.Shadow.Visible = True
+container.ZOrder(1)  # Send to back
+container.TextFrame2.TextRange.Text = " "  # Empty text
+
+# -----------------------------
+# 2. Add dashboard title
+# -----------------------------
+title = ws.Shapes.AddTextbox(1, 40, 30, 300, 30)
+title.TextFrame.Characters().Text = "📊 Company Dashboard Overview"
+title.TextFrame.Characters().Font.Size = 18
+title.TextFrame.Characters().Font.Bold = True
+title.TextFrame.HorizontalAlignment = -4108  # Center
+title.Fill.Visible = False
+title.Line.Visible = False
+
+# -----------------------------
+# 3. Example content inside box
+# -----------------------------
+section1 = ws.Shapes.AddTextbox(1, 50, 70, 300, 20)
+section1.TextFrame.Characters().Text = "✔ Key Metrics Summary"
+section1.TextFrame.Characters().Font.Size = 14
+section1.TextFrame.Characters().Font.Bold = True
+section1.Fill.Visible = False
+section1.Line.Visible = False
+
+section2 = ws.Shapes.AddTextbox(1, 50, 100, 300, 20)
+section2.TextFrame.Characters().Text = "✔ Data Upload Status"
+section2.TextFrame.Characters().Font.Size = 14
+section2.TextFrame.Characters().Font.Bold = True
+section2.Fill.Visible = False
+section2.Line.Visible = False
+
+# -----------------------------
+# 4. Add functional buttons (Form Controls)
+# -----------------------------
+# Button 1: Create Upload File
+btn1 = ws.Buttons().Add(50, 150, 150, 30)
+btn1.Text = "Create Upload File"
+btn1.OnAction = "create_upload_file"  # Name of macro in Excel
+
+# Button 2: Import Upload File
+btn2 = ws.Buttons().Add(220, 150, 150, 30)
+btn2.Text = "Import Upload File"
+btn2.OnAction = "import_upload_file"  # Name of macro in Excel
+
+# -----------------------------
+# 5. Auto-fit columns for better look
+# -----------------------------
+ws.Columns("A:E").ColumnWidth = 25
+
+print("✅ Dashboard created successfully with one box and functional buttons.")
