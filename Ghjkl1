@@ -1,0 +1,226 @@
+from PyQt5 import QtWidgets, QtGui, QtCore
+import sys
+import pandas as pd
+
+class Overview(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(100, 100, 1100, 700)
+        
+        # === Main Layout ===
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        # === Title ===
+        self.title = QtWidgets.QLabel("PTD/YTD Results - USA")
+        self.title.setFont(QtGui.QFont("Segoe UI", 28, QtGui.QFont.Bold))
+        self.title.setAlignment(QtCore.Qt.AlignCenter)
+        self.title.setStyleSheet("""
+            color: #ffffff;
+            padding: 12px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a5f, stop:1 #305a8a);
+            border-radius: 10px;
+        """)
+        main_layout.addWidget(self.title)
+
+        # === Title Animation ===
+        self.title_effect = QtWidgets.QGraphicsOpacityEffect()
+        self.title.setGraphicsEffect(self.title_effect)
+        self.title_anim = QtCore.QPropertyAnimation(self.title_effect, b"opacity")
+        self.title_anim.setDuration(1500)
+        self.title_anim.setStartValue(0)
+        self.title_anim.setEndValue(1)
+
+        self.title_slide = QtCore.QPropertyAnimation(self.title, b"geometry")
+        self.title_slide.setDuration(1500)
+        self.title_slide.setStartValue(QtCore.QRect(100, 0, 900, 60))
+        self.title_slide.setEndValue(QtCore.QRect(100, 20, 900, 60))
+
+        self.title_anim.start()
+        self.title_slide.start()
+
+        # === Forms Layout ===
+        forms_layout = QtWidgets.QHBoxLayout()
+        forms_layout.setSpacing(15)
+
+        # === Client Information ===
+        client_info = self.create_groupbox("Client Information", [
+            ("Client Number:", self.create_static_field("")),
+            ("Company Name:", self.create_static_field("")),
+            ("Country:", self.create_static_field("USA")),
+            ("Language:", self.create_static_field("English"))
+        ])
+        forms_layout.addWidget(client_info)
+
+        # === Client Contact ===
+        contact_info = self.create_groupbox("Client Contact", [
+            ("Name:", self.create_static_field("")),
+            ("Phone Number:", self.create_static_field("")),
+            ("Email:", self.create_static_field("")),
+            ("ADP Contact:", self.create_static_field(""))
+        ])
+        forms_layout.addWidget(contact_info)
+
+        main_layout.addLayout(forms_layout)
+
+        # === Period Information ===
+        period_info = self.create_groupbox("Period", [
+            ("Date Received:", self.create_static_field("")),
+            ("Date Processed:", self.create_static_field(""))
+        ])
+        main_layout.addWidget(period_info)
+
+        # === Transaction Overview ===
+        trans_box = QtWidgets.QGroupBox("Transaction Overview")
+        trans_layout = QtWidgets.QVBoxLayout()
+
+        self.trans_table = QtWidgets.QTableWidget()
+        self.trans_table.setColumnCount(2)
+        self.trans_table.setHorizontalHeaderLabels(["Record Type", "Record Count"])
+        self.trans_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.trans_table.setEditTriggers(QtWidgets.QTableWidget.DoubleClicked)
+        self.trans_table.setAlternatingRowColors(True)
+        self.trans_table.setStyleSheet("""
+            QTableWidget {
+                alternate-background-color: #f8f9fa;
+                background-color: white;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+        """)
+        self.trans_table.itemChanged.connect(self.update_total_records)
+        trans_layout.addWidget(self.trans_table)
+
+        total_layout = QtWidgets.QHBoxLayout()
+        total_label = QtWidgets.QLabel("Total Records:")
+        total_label.setFont(QtGui.QFont("Segoe UI", 11, QtGui.QFont.Bold))
+        self.total_value = QtWidgets.QLabel("0")
+        self.total_value.setFont(QtGui.QFont("Segoe UI", 11))
+        total_layout.addStretch()
+        total_layout.addWidget(total_label)
+        total_layout.addWidget(self.total_value)
+        trans_layout.addLayout(total_layout)
+
+        trans_box.setLayout(trans_layout)
+        main_layout.addWidget(trans_box)
+
+        # === Buttons ===
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.active_excel_btn = QtWidgets.QPushButton("Active Excel Sheet")
+        self.active_excel_btn.clicked.connect(self.load_excel)
+
+        self.upload_btn = QtWidgets.QPushButton("Create Upload File")
+        self.upload_btn.clicked.connect(self.create_upload_file)
+
+        import_btn = QtWidgets.QPushButton("Import Upload File")
+
+        for btn in [self.active_excel_btn, self.upload_btn, import_btn]:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e3a5f;
+                    color: white;
+                    font-weight: bold;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    border: 1px solid #16324a;
+                }
+                QPushButton:hover {
+                    background-color: #305a8a;
+                    border: 1px solid #24466d;
+                    box-shadow: 0px 0px 8px rgba(30,58,95,0.6);
+                }
+            """)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.active_excel_btn)
+        btn_layout.addWidget(self.upload_btn)
+        btn_layout.addWidget(import_btn)
+        main_layout.addLayout(btn_layout)
+
+        # === Page Background ===
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #eef2f7, stop:1 #dce3eb);
+                font-family: Segoe UI;
+                font-size: 12pt;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #ccc;
+                border-radius: 10px;
+                margin-top: 10px;
+                background-color: white;
+                padding: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+                color: #1e3a5f;
+                font-size: 14pt;
+            }
+        """)
+
+    def create_groupbox(self, title, rows):
+        box = QtWidgets.QGroupBox(title)
+        layout = QtWidgets.QFormLayout()
+        for label, widget in rows:
+            layout.addRow(label, widget)
+        box.setLayout(layout)
+        return box
+
+    def create_static_field(self, text):
+        field = QtWidgets.QLineEdit(text)
+        field.setReadOnly(True)
+        field.setFrame(False)  # Removes 3D/border effect
+        field.setStyleSheet("background: transparent; color: black;")
+        return field
+
+    def update_total_records(self):
+        total = 0
+        for row in range(self.trans_table.rowCount()):
+            try:
+                val = int(self.trans_table.item(row, 1).text())
+                total += val
+            except:
+                pass
+        self.total_value.setText(str(total))
+
+    def load_excel(self):
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)")
+        if file_path:
+            df = pd.read_excel(file_path)
+            self.trans_table.setRowCount(len(df))
+            for i, row in df.iterrows():
+                self.trans_table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(row[0])))
+                self.trans_table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(row[1])))
+            self.update_total_records()
+
+    def create_upload_file(self):
+        save_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Upload File", "", "Excel Files (*.xlsx)")
+        if save_path:
+            data = []
+            for row in range(self.trans_table.rowCount()):
+                record_type_item = self.trans_table.item(row, 0)
+                record_count_item = self.trans_table.item(row, 1)
+                record_type = record_type_item.text() if record_type_item else ""
+                record_count = record_count_item.text() if record_count_item else ""
+                data.append([record_type, record_count])
+
+            # Add total row
+            data.append(["Total Records", self.total_value.text()])
+
+            df = pd.DataFrame(data, columns=["Record Type", "Record Count"])
+            df.to_excel(save_path, index=False)
+            QtWidgets.QMessageBox.information(self, "Success", "Upload file created successfully!")
+
+def run_app():
+    app = QtWidgets.QApplication(sys.argv)
+    win = Overview()
+    win.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    run_app()
