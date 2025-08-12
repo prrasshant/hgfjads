@@ -1,0 +1,207 @@
+from PyQt5 import QtWidgets, QtGui, QtCore
+import pandas as pd
+import sys
+
+class Overview(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(200, 100, 1150, 750)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f4f6f8;
+                font-family: Segoe UI;
+                font-size: 14px;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #ddd;
+                border-radius: 10px;
+                background-color: white;
+                margin-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 6px 12px;
+                color: white;
+                background-color: #0078D7;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                font-size: 15px;
+            }
+            QPushButton {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0078D7, stop:1 #005a9e);
+                color: white;
+                font-weight: bold;
+                padding: 10px 18px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #005a9e;
+            }
+            QLineEdit {
+                background: #ffffff;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QTableWidget {
+                background-color: white;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                gridline-color: #e0e0e0;
+                alternate-background-color: #f9f9f9;
+            }
+            QHeaderView::section {
+                background-color: #0078D7;
+                color: white;
+                font-weight: bold;
+                padding: 6px;
+                border: none;
+            }
+            QLabel#TotalBadge {
+                background-color: #e6f2ff;
+                color: #005a9e;
+                border-radius: 12px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+        """)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # ----- Gradient Header -----
+        banner = QtWidgets.QFrame()
+        banner.setStyleSheet("""
+            QFrame {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0078D7, stop:1 #005a9e
+                );
+                border-radius: 8px;
+            }
+        """)
+        banner_layout = QtWidgets.QVBoxLayout(banner)
+        title = QtWidgets.QLabel("PTD/YTD Results - USA")
+        title.setFont(QtGui.QFont("Segoe UI", 28, QtGui.QFont.Bold))
+        title.setStyleSheet("color: white; text-shadow: 1px 1px 2px black;")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+
+        subtitle = QtWidgets.QLabel("Data Entry & Transaction Overview Dashboard")
+        subtitle.setFont(QtGui.QFont("Segoe UI", 13))
+        subtitle.setStyleSheet("color: #d0e6ff;")
+        subtitle.setAlignment(QtCore.Qt.AlignCenter)
+
+        banner_layout.addWidget(title)
+        banner_layout.addWidget(subtitle)
+        layout.addWidget(banner)
+
+        # ----- Client Information -----
+        layout.addWidget(self.create_form_group("Client Information", [
+            ("Client Number:", QtWidgets.QLineEdit()),
+            ("Company Name:", QtWidgets.QLineEdit()),
+            ("Country:", QtWidgets.QLineEdit()),
+            ("Language:", QtWidgets.QLineEdit())
+        ]))
+
+        # ----- Client Contact -----
+        layout.addWidget(self.create_form_group("Client Contact", [
+            ("Name:", QtWidgets.QLineEdit()),
+            ("Phone Number:", QtWidgets.QLineEdit()),
+            ("Email:", QtWidgets.QLineEdit()),
+            ("ADP Contact:", QtWidgets.QLineEdit())
+        ]))
+
+        # ----- Period -----
+        layout.addWidget(self.create_form_group("Period", [
+            ("Date Received:", QtWidgets.QLineEdit()),
+            ("Date Processed:", QtWidgets.QLineEdit())
+        ]))
+
+        # ----- Transaction Overview -----
+        trans_info = QtWidgets.QGroupBox("Transaction Overview")
+        trans_layout = QtWidgets.QVBoxLayout()
+
+        self.table = QtWidgets.QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["Record Type", "Record Count"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.itemChanged.connect(self.update_total_records)
+        trans_layout.addWidget(self.table)
+
+        self.total_label = QtWidgets.QLabel("Total Records: 0")
+        self.total_label.setFont(QtGui.QFont("Segoe UI", 12, QtGui.QFont.Bold))
+        self.total_label.setStyleSheet("color: #005a9e; padding-top: 5px;")
+        self.total_label.setObjectName("TotalBadge")
+        trans_layout.addWidget(self.total_label)
+
+        trans_info.setLayout(trans_layout)
+        layout.addWidget(trans_info)
+
+        # ----- Buttons -----
+        btn_layout = QtWidgets.QHBoxLayout()
+        test_checkbox = QtWidgets.QCheckBox("Test Run (No Update)")
+        btn_layout.addWidget(test_checkbox)
+        btn_layout.addStretch()
+
+        upload_btn = self.create_icon_button("Create Upload File", "📤")
+        import_btn = self.create_icon_button("Import Upload File", "📥")
+        excel_btn = self.create_icon_button("Activate Excel Sheet", "📊")
+        excel_btn.clicked.connect(self.load_excel_data)
+
+        btn_layout.addWidget(upload_btn)
+        btn_layout.addWidget(import_btn)
+        btn_layout.addWidget(excel_btn)
+        layout.addLayout(btn_layout)
+
+    def create_form_group(self, title, fields):
+        group = QtWidgets.QGroupBox(title)
+        form_layout = QtWidgets.QFormLayout()
+        for label, widget in fields:
+            form_layout.addRow(label, widget)
+        group.setLayout(form_layout)
+        return group
+
+    def create_icon_button(self, text, icon_symbol):
+        btn = QtWidgets.QPushButton(f"{icon_symbol}  {text}")
+        btn.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+        return btn
+
+    def update_total_records(self):
+        total = 0
+        for row in range(self.table.rowCount()):
+            try:
+                total += int(self.table.item(row, 1).text())
+            except:
+                pass
+        self.total_label.setText(f"Total Records: {total}")
+
+    def load_excel_data(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Excel File", "", "Excel Files (*.xlsx *.xls)")
+        if path:
+            df = pd.read_excel(path)
+            if not {"Record Type", "Record Count"}.issubset(df.columns):
+                QtWidgets.QMessageBox.warning(self, "Error", "Excel must contain 'Record Type' and 'Record Count' columns.")
+                return
+            self.table.setRowCount(0)
+            for _, row in df.iterrows():
+                row_pos = self.table.rowCount()
+                self.table.insertRow(row_pos)
+                self.table.setItem(row_pos, 0, QtWidgets.QTableWidgetItem(str(row["Record Type"])))
+                self.table.setItem(row_pos, 1, QtWidgets.QTableWidgetItem(str(row["Record Count"])))
+            self.update_total_records()
+
+
+def run_app():
+    app = QtWidgets.QApplication(sys.argv)
+    main_win = Overview()
+    main_win.show()
+    app.exec_()
+
+if __name__ == "__main__":
+    run_app()
