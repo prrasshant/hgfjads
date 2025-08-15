@@ -1,0 +1,211 @@
+from PyQt5 import QtWidgets, QtGui, QtCore
+import sys
+import pandas as pd
+import win32com.client as win32  # For Active Excel Sheet access
+
+class Overview(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PTD/YTD Results - USA")
+        self.setGeometry(100, 100, 1100, 700)
+        
+        # === Main Layout ===
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+
+        # === Title ===
+        self.title = QtWidgets.QLabel("PTD/YTD Results - USA")
+        self.title.setFont(QtGui.QFont("Segoe UI", 26, QtGui.QFont.Bold))
+        self.title.setAlignment(QtCore.Qt.AlignCenter)
+        self.title.setStyleSheet("color: #1e3a5f; padding: 10px;")
+        main_layout.addWidget(self.title)
+
+        # === Apply fade-in animation to title ===
+        self.title_opacity = QtWidgets.QGraphicsOpacityEffect()
+        self.title.setGraphicsEffect(self.title_opacity)
+        self.title_animation = QtCore.QPropertyAnimation(self.title_opacity, b"opacity")
+        self.title_animation.setDuration(1500)
+        self.title_animation.setStartValue(0)
+        self.title_animation.setEndValue(1)
+        self.title_animation.start()
+
+        # === Forms Layout ===
+        forms_layout = QtWidgets.QHBoxLayout()
+        forms_layout.setSpacing(15)
+
+        # === Client Information ===
+        client_info = self.create_groupbox("Client Information", [
+            ("Client Number:", QtWidgets.QLineEdit()),
+            ("Company Name:", QtWidgets.QLineEdit()),
+            ("Country:", self.create_static_field("USA")),
+            ("Language:", self.create_static_field("English"))
+        ])
+        forms_layout.addWidget(client_info)
+
+        # === Client Contact ===
+        contact_info = self.create_groupbox("Client Contact", [
+            ("Name:", QtWidgets.QLineEdit()),
+            ("Phone Number:", QtWidgets.QLineEdit()),
+            ("Email:", QtWidgets.QLineEdit()),
+            ("ADP Contact:", QtWidgets.QLineEdit())
+        ])
+        forms_layout.addWidget(contact_info)
+
+        main_layout.addLayout(forms_layout)
+
+        # === Period Information ===
+        period_info = self.create_groupbox("Period", [
+            ("Date Received:", QtWidgets.QLineEdit()),
+            ("Date Processed:", QtWidgets.QLineEdit())
+        ])
+        main_layout.addWidget(period_info)
+
+        # === Transaction Overview ===
+        trans_box = QtWidgets.QGroupBox("Transaction Overview")
+        trans_layout = QtWidgets.QVBoxLayout()
+
+        self.trans_table = QtWidgets.QTableWidget()
+        self.trans_table.setColumnCount(2)
+        self.trans_table.setHorizontalHeaderLabels(["Record Type", "Record Count"])
+        self.trans_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.trans_table.setEditTriggers(QtWidgets.QTableWidget.DoubleClicked)
+        self.trans_table.itemChanged.connect(self.update_total_records)
+        trans_layout.addWidget(self.trans_table)
+
+        total_layout = QtWidgets.QHBoxLayout()
+        total_label = QtWidgets.QLabel("Total Records:")
+        total_label.setFont(QtGui.QFont("Segoe UI", 11, QtGui.QFont.Bold))
+        self.total_value = QtWidgets.QLabel("0")
+        self.total_value.setFont(QtGui.QFont("Segoe UI", 11))
+        total_layout.addStretch()
+        total_layout.addWidget(total_label)
+        total_layout.addWidget(self.total_value)
+        trans_layout.addLayout(total_layout)
+
+        trans_box.setLayout(trans_layout)
+        main_layout.addWidget(trans_box)
+
+        # === Buttons ===
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.active_excel_btn = QtWidgets.QPushButton("Active Excel Sheet")
+        self.active_excel_btn.clicked.connect(self.sync_active_excel)  # New function for syncing
+
+        self.upload_btn = QtWidgets.QPushButton("Create Upload File")
+        self.upload_btn.clicked.connect(self.load_excel)  # Old functionality moved here
+
+        self.import_btn = QtWidgets.QPushButton("Import Upload File")
+
+        for btn in [self.active_excel_btn, self.upload_btn, self.import_btn]:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e3a5f;
+                    color: white;
+                    font-weight: bold;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #2d4f7c;
+                }
+            """)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.active_excel_btn)
+        btn_layout.addWidget(self.upload_btn)
+        btn_layout.addWidget(self.import_btn)
+        main_layout.addLayout(btn_layout)
+
+        # === Styling ===
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f5f6fa;
+                font-family: Segoe UI;
+                font-size: 12pt;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #1e3a5f;
+                border-radius: 8px;
+                margin-top: 10px;
+                background-color: white;
+                padding: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+                color: #1e3a5f;
+                font-size: 14pt;
+            }
+            QLineEdit {
+                background: #ffffff;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                padding: 4px;
+            }
+        """)
+
+    def create_groupbox(self, title, rows):
+        box = QtWidgets.QGroupBox(title)
+        layout = QtWidgets.QFormLayout()
+        for label, widget in rows:
+            layout.addRow(label, widget)
+        box.setLayout(layout)
+        return box
+
+    def create_static_field(self, text):
+        field = QtWidgets.QLineEdit(text)
+        field.setReadOnly(True)
+        field.setStyleSheet("background-color: #e9ecef;")
+        return field
+
+    def update_total_records(self):
+        total = 0
+        for row in range(self.trans_table.rowCount()):
+            try:
+                val = int(self.trans_table.item(row, 1).text())
+                total += val
+            except:
+                pass
+        self.total_value.setText(str(total))
+
+    def load_excel(self):
+        """Loads data from a selected Excel file."""
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)")
+        if file_path:
+            df = pd.read_excel(file_path)
+            self.populate_table(df)
+
+    def sync_active_excel(self):
+        """Loads data from the currently active Excel sheet."""
+        try:
+            excel = win32.Dispatch("Excel.Application")
+            wb = excel.ActiveWorkbook
+            sheet = excel.ActiveSheet
+
+            # Read data from the used range
+            data = sheet.UsedRange.Value
+            df = pd.DataFrame(data)
+            df.dropna(how='all', inplace=True)  # Remove empty rows
+            df.dropna(axis=1, how='all', inplace=True)  # Remove empty columns
+
+            self.populate_table(df)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Could not connect to active Excel: {e}")
+
+    def populate_table(self, df):
+        """Helper to fill QTableWidget with DataFrame contents."""
+        self.trans_table.setRowCount(len(df))
+        for i, row in df.iterrows():
+            self.trans_table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(row[0])))
+            self.trans_table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(row[1])))
+        self.update_total_records()
+
+def run_app():
+    app = QtWidgets.QApplication(sys.argv)
+    win = Overview()
+    win.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    run_app()
