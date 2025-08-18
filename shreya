@@ -1,0 +1,105 @@
+import os
+import xlwings as xw
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+
+def build_xlsm():
+    # Remove old file if exists
+    if os.path.exists(OUT_FILE):
+        os.remove(OUT_FILE)
+
+    app = xw.App(visible=False)
+    wb = app.books.add()
+    sht = wb.sheets[0]
+    sht.name = "Overview"
+
+    # Set column widths
+    widths = [3, 20, 30, 20, 20, 12, 12]
+    for i, w in enumerate(widths, start=1):
+        sht.api.Columns(i).ColumnWidth = w
+
+    # Dashboard Header
+    sht.range("B2:G3").merge()
+    sht.range("B2").value = "PTD/YTD Results - USA"
+    sht.range("B2").api.Font.Size = 18
+    sht.range("B2").api.Font.Bold = True
+    sht.range("B2").color = (46, 125, 50)  # green fill
+    sht.range("B2").api.Font.Color = 16777215  # white text
+    sht.range("B2").api.HorizontalAlignment = -4108
+    sht.range("B2").api.VerticalAlignment = -4108
+
+    # Section titles
+    sht.range("B5:D5").merge()
+    sht.range("B5").value = "Client Info"
+    sht.range("E5:G5").merge()
+    sht.range("E5").value = "Client Contact"
+    sht.range("B11:D11").merge()
+    sht.range("B11").value = "Period"
+    sht.range("E11:G11").merge()
+    sht.range("E11").value = "Transaction Overview"
+
+    # Labels
+    labels = {
+        "B6": "Client Number",
+        "B7": "Company Name",
+        "B8": "Country",
+        "B9": "Language",
+        "E6": "Name",
+        "E7": "Phone Number",
+        "E8": "E-Mail",
+        "E9": "ADP Contact",
+        "B12": "Date Received",
+        "B13": "Date Processed",
+        "E12": "Record Type",
+        "E13": "Record Count"
+    }
+    for cell, text in labels.items():
+        sht.range(cell).value = text
+        sht.range(cell).api.Font.Bold = True
+
+    # Hidden data sheet for bindings
+    data_sht = wb.sheets.add("Data")
+    data_sht.visible = False
+    headers = ["ClientNumber", "CompanyName", "Country", "Language", "ContactName", "Phone", "Email", "ADPContact"]
+    for col, h in enumerate(headers, start=1):
+        data_sht.range(1, col).value = h
+
+    # Helper: get cell coords
+    def cell_left_top(row, col):
+        r = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+        return r.Left, r.Top
+
+    # Add ActiveX textboxes and link to hidden sheet
+    def add_textbox(name, row, col, link_cell):
+        left, top = cell_left_top(row, col)
+        tb = sht.api.OLEObjects().Add(
+            ClassType="Forms.TextBox.1",
+            Link=False,
+            DisplayAsIcon=False,
+            Left=left+2,
+            Top=top+2,
+            Width=160,
+            Height=18
+        )
+        tb.Name = name
+        tb.Object.Text = ""
+        tb.LinkedCell = f"Data!{link_cell}"
+
+    add_textbox("txtClientNumber", 6, 3, "A2")
+    add_textbox("txtCompanyName", 7, 3, "B2")
+    add_textbox("txtCountry", 8, 3, "C2")
+    add_textbox("txtLanguage", 9, 3, "D2")
+    add_textbox("txtContactName", 6, 6, "E2")
+    add_textbox("txtPhone", 7, 6, "F2")
+    add_textbox("txtEmail", 8, 6, "G2")
+    add_textbox("txtADPContact", 9, 6, "H2")
+
+    # Save workbook as xlsm
+    wb.save(OUT_FILE)
+    wb.close()
+    app.quit()
+    print(f"Dashboard created: {OUT_FILE}")
+
+
+if __name__ == "__main__":
+    build_xlsm()
