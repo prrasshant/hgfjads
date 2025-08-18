@@ -1,0 +1,108 @@
+import xlwings as xw
+
+OUT_FILE = "Interactive_Dashboard.xlsm"
+
+def build_xlsm():
+    # Start Excel
+    app = xw.App(visible=False)
+    book = app.books.add()  # new workbook
+    
+    # === Sheets ===
+    sht_overview = book.sheets[0]
+    sht_overview.name = "Overview"
+    sht_data = book.sheets.add("Data")
+
+    # Overview layout
+    sht_overview["B2"].value = "Country"
+    sht_overview["C2"].value = "USA"
+    sht_overview["B3"].value = "Language"
+    sht_overview["C3"].value = "English"
+    sht_overview["B5"].value = "Transaction Overview"
+
+    sht_overview["B6"].value = "Client Number"
+    sht_overview["B7"].value = "Company Name"
+    sht_overview["B8"].value = "Record Type"
+    sht_overview["B9"].value = "Client"
+
+    # Data headers
+    sht_data["A1"].value = ["Client Number", "Company Name", "Record Type", "Client"]
+
+    # === ActiveX Controls ===
+    def cell_left_top(row, col):
+        rng = sht_overview.api.Cells(row, col)
+        return rng.Left, rng.Top
+
+    # TextBoxes
+    left, top = cell_left_top(6, 3)
+    tb1 = sht_overview.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                            left+2, top+2, 220, 18)
+    tb1.Name = "txtClientNumber"
+
+    left, top = cell_left_top(7, 3)
+    tb2 = sht_overview.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                            left+2, top+2, 320, 18)
+    tb2.Name = "txtCompanyName"
+
+    # ComboBoxes
+    left, top = cell_left_top(8, 3)
+    cb1 = sht_overview.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                            left+2, top+2, 150, 18)
+    cb1.Name = "cmbRecordType"
+    cb1.Object.AddItem("Purchase")
+    cb1.Object.AddItem("Refund")
+    cb1.Object.AddItem("Adjustment")
+
+    left, top = cell_left_top(9, 3)
+    cb2 = sht_overview.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                            left+2, top+2, 200, 18)
+    cb2.Name = "cmbClient"
+    cb2.Object.AddItem("Client A")
+    cb2.Object.AddItem("Client B")
+    cb2.Object.AddItem("Client C")
+
+    # Total Records counter
+    sht_overview["B11"].value = "Total Records"
+    sht_overview["C11"].formula = "=COUNTA(Data!A2:A1048576)"
+
+    # === VBA Macro ===
+    vba_code = r'''
+Sub AddRecord()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    
+    Set ws = ThisWorkbook.Sheets("Data")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    
+    ws.Cells(lastRow, 1).Value = Sheet1.OLEObjects("txtClientNumber").Object.Text
+    ws.Cells(lastRow, 2).Value = Sheet1.OLEObjects("txtCompanyName").Object.Text
+    ws.Cells(lastRow, 3).Value = Sheet1.OLEObjects("cmbRecordType").Object.Value
+    ws.Cells(lastRow, 4).Value = Sheet1.OLEObjects("cmbClient").Object.Value
+    
+    Sheet1.OLEObjects("txtClientNumber").Object.Text = ""
+    Sheet1.OLEObjects("txtCompanyName").Object.Text = ""
+    Sheet1.OLEObjects("cmbRecordType").Object.Value = ""
+    Sheet1.OLEObjects("cmbClient").Object.Value = ""
+    
+    MsgBox "Record added successfully!", vbInformation
+End Sub
+'''
+
+    vbcomp = book.api.VBProject.VBComponents.Add(1)
+    vbcomp.CodeModule.AddFromString(vba_code)
+
+    # Add Button
+    left, top = cell_left_top(12, 3)
+    btn = sht_overview.api.OLEObjects().Add("Forms.CommandButton.1", False, False, "", "",
+                                            left+2, top+2, 120, 30)
+    btn.Name = "btnAddRecord"
+    btn.Object.Caption = "Add Record"
+    btn.Object.OnAction = "AddRecord"
+
+    # Save properly as XLSM
+    book.api.SaveAs(OUT_FILE, FileFormat=52)  # 52 = xlsm
+    book.close()
+    app.quit()
+
+if __name__ == "__main__":
+    build_xlsm()
+    print("✅ Dashboard created successfully:", OUT_FILE)
