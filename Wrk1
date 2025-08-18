@@ -1,0 +1,510 @@
+# create_adp_xlsm_enhanced.py
+# Creates ADP_Interactive_Dashboard.xlsm with ActiveX controls + VBA macros + improved transaction table & overview
+# Requirements:
+#   pip install xlwings openpyxl pywin32
+# Run on Windows with Excel installed and "Trust access to the VBA project object model" enabled.
+
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+VBA_MODULE_NAME = "ADP_Module"
+
+# VBA code: AddTransaction appends row to Data table, RefreshTransactionOverview populates tabular counts
+VBA_CODE = r'''
+Option Explicit
+
+Sub CreateUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim clientNum As String, compName As String, country As String, language As String
+    On Error Resume Next
+    clientNum = ws.OLEObjects("txtClientNumber").Object.Text
+    compName  = ws.OLEObjects("txtCompanyName").Object.Text
+    country   = ws.OLEObjects("txtCountry").Object.Text
+    language  = ws.OLEObjects("txtLanguage").Object.Text
+    On Error GoTo 0
+    
+    Dim fName As String
+    fName = ThisWorkbook.Path & Application.PathSeparator & "upload_" & clientNum & ".csv"
+    
+    Dim fso As Object, ts As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.CreateTextFile(fName, True, False)
+    
+    ts.WriteLine "ClientNumber,CompanyName,Country,Language"
+    ts.WriteLine """" & clientNum & """,""" & compName & """,""" & country & """,""" & language & """"
+    ts.Close
+    
+    MsgBox "Upload file created: " & vbCrLf & fName, vbInformation, "Create Upload File"
+End Sub
+
+Sub ImportUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim f As Variant
+    f = Application.GetOpenFilename("CSV Files (*.csv), *.csv", , "Select upload file")
+    If f = False Then Exit Sub
+    
+    Dim fso As Object, ts As Object, header As String, line As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(f, 1, False)
+    If Not ts.AtEndOfStream Then
+        header = ts.ReadLine
+    End If
+    If Not ts.AtEndOfStream Then
+        line = ts.ReadLine
+        ts.Close
+        Dim parts As Variant
+        parts = Split(line, ",")
+        On Error Resume Next
+        ws.Range("F14").Value = Replace(parts(0), """", "")
+        ws.Range("G14").Value = Replace(parts(1), """", "")
+        ws.Range("H14").Value = Replace(parts(2), """", "")
+        On Error GoTo 0
+        MsgBox "Imported first record from file.", vbInformation, "Import"
+    Else
+        MsgBox "No data lines found.", vbExclamation, "Import"
+    End If
+End Sub
+
+' Adds a transaction row to the Data table. Country/Language are enforced as USA/English.
+Sub AddTransaction()
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+    Dim ws As Worksheet, dataWs As Worksheet
+    Set ws = wb.Worksheets("Overview")
+    Set dataWs = wb.Worksheets("Data")
+    
+    Dim recType As String, clientName As String, amount As Variant, txDate As Variant, status As String
+    On Error Resume Next
+    recType = ws.OLEObjects("cmbRecordType").Object.Value
+    clientName = ws.OLEObjects("txtTransClient").Object.Text
+    amount = ws.OLEObjects("txtTransAmount").Object.Text
+    txDate = ws.OLEObjects("txtTransDate").Object.Text
+    status = ws.OLEObjects("cmbStatus").Object.Value
+    On Error GoTo 0
+    
+    If Trim(recType) = "" Or Trim(clientName) = "" Then
+        MsgBox "Please provide at least Record Type and Client.", vbExclamation, "Missing data"
+        Exit Sub
+    End If
+    
+    ' Enforce Country and Language
+    Dim country As String, language As String
+    country = "USA"
+    language = "English"
+    
+    ' Find next empty row in Data table (A header row at row 1)
+    Dim nextRow As Long
+    nextRow = dataWs.Cells(dataWs.Rows.Count, "A").End(xlUp).Row + 1
+    If nextRow < 2 Then nextRow = 2
+    
+    dataWs.Cells(nextRow, "A").Value = recType
+    dataWs.Cells(nextRow, "B").Value = clientName
+    dataWs.Cells(nextRow, "C").Value = amount
+    If IsDate(txDate) Then
+        dataWs.Cells(nextRow, "D").Value = CDate(txDate)
+    Else
+        dataWs.Cells(nextRow, "D").Value = txDate
+    End If
+    dataWs.Cells(nextRow, "E").Value = status
+    dataWs.Cells(nextRow, "F").Value = country
+    dataWs.Cells(nextRow, "G").Value = language
+    
+    ' Optional: format date cell
+    On Error Resume Next
+    dataWs.Cells(nextRow, "D").NumberFormat = "yyyy-mm-dd"
+    On Error GoTo 0
+    
+    ' Clear input controls (except country/language which are fixed)
+    On Error Resume Next
+    ws.OLEObjects("cmbRecordType").Object.Value = ""
+    ws.OLEObjects("txtTransClient").Object.Text = ""
+    ws.OLEObjects("txtTransAmount").Object.Text = ""
+    ws.OLEObjects("txtTransDate").Object.Text = ""
+    ws.OLEObjects("cmbStatus").Object.Value = ""
+    On Error GoTo 0
+    
+    ' Refresh overview table & totals
+    Call RefreshTransactionOverview
+    
+    MsgBox "Transaction added.", vbInformation, "Add Transaction"
+End Sub
+
+' Refreshes the Transaction Overview area on Overview sheet.
+' Builds a two-part tabular view:
+'   1) Unique RecordType with counts
+'   2) Unique Clients with counts
+' Writes TotalRecords
+Sub RefreshTransactionOverview()
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+    Dim ws As Worksheet, dataWs As Worksheet
+    Set ws = wb.Worksheets("Overview")
+    Set dataWs = wb.Worksheets("Data")
+    
+    Dim lastRow As Long
+    lastRow = dataWs.Cells(dataWs.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 2 Then
+        ' Clear overview area
+        ws.Range("E14:G30").ClearContents
+        ws.Range("G14").Value = 0
+        Exit Sub
+    End If
+    
+    Dim dictRec As Object, dictClient As Object
+    Set dictRec = CreateObject("Scripting.Dictionary")
+    Set dictClient = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long, rType As String, cName As String
+    For i = 2 To lastRow
+        rType = Trim(CStr(dataWs.Cells(i, "A").Value))
+        cName = Trim(CStr(dataWs.Cells(i, "B").Value))
+        If rType <> "" Then
+            If Not dictRec.Exists(rType) Then dictRec.Add rType, 0
+            dictRec(rType) = dictRec(rType) + 1
+        End If
+        If cName <> "" Then
+            If Not dictClient.Exists(cName) Then dictClient.Add cName, 0
+            dictClient(cName) = dictClient(cName) + 1
+        End If
+    Next i
+    
+    ' Write RecordType table starting at E14
+    Dim outRow As Long
+    outRow = 14
+    ws.Range("E14:G30").ClearContents
+    ws.Cells(outRow, "E").Value = "Record Type"
+    ws.Cells(outRow, "F").Value = "Count"
+    ws.Cells(outRow, "G").Value = " "
+    outRow = outRow + 1
+    
+    Dim key As Variant
+    For Each key In dictRec.Keys
+        ws.Cells(outRow, "E").Value = key
+        ws.Cells(outRow, "F").Value = dictRec(key)
+        outRow = outRow + 1
+    Next key
+    
+    ' leave a blank row then write Clients
+    outRow = outRow + 1
+    ws.Cells(outRow, "E").Value = "Client"
+    ws.Cells(outRow, "F").Value = "Count"
+    outRow = outRow + 1
+    For Each key In dictClient.Keys
+        ws.Cells(outRow, "E").Value = key
+        ws.Cells(outRow, "F").Value = dictClient(key)
+        outRow = outRow + 1
+    Next key
+    
+    ' Total records
+    Dim totalRecords As Long
+    totalRecords = WorksheetFunction.CountA(dataWs.Range("A2:A" & lastRow))
+    ws.Range("G14").Value = totalRecords
+End Sub
+
+' Helper to initialize overview (call if needed)
+Sub InitializeOverview()
+    Call RefreshTransactionOverview
+End Sub
+'''
+
+def build_xlsm():
+    # remove old file if exists
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    # 1) Create initial workbook with xlwings (so Excel's COM object handles .xlsm)
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        # rename default sheet to Overview
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # set column widths for dashboard
+        widths = [3, 22, 30, 3, 22, 18, 14, 14]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        # Header
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 18
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = (46, 125, 50)  # green fill
+        sht.range("B2").api.Font.Color = 16777215  # white text
+        sht.range("B2").api.HorizontalAlignment = -4108  # xlCenter
+        sht.range("B2").api.VerticalAlignment = -4108
+
+        # Left: Client Information block
+        sht.range("B5:D5").merge(); sht.range("B5").value = "Client Information"
+        sht.range("B6").value = "Client Number:"; sht.range("C6").value = ""
+        sht.range("B7").value = "Company Name:";  sht.range("C7").value = ""
+        sht.range("B8").value = "Country:";       sht.range("C8").value = "USA"
+        sht.range("B9").value = "Language:";      sht.range("C9").value = "English"
+
+        # Right: Client Contact block
+        sht.range("E5:G5").merge(); sht.range("E5").value = "Client Contact"
+        sht.range("E6").value = "Name:"; sht.range("F6").value = ""
+        sht.range("E7").value = "Phone Number:"; sht.range("F7").value = ""
+        sht.range("E8").value = "Email:"; sht.range("F8").value = ""
+        sht.range("E9").value = "ADP Contact:"; sht.range("F9").value = ""
+
+        # Period block
+        sht.range("B11:D11").merge(); sht.range("B11").value = "Period"
+        sht.range("B12").value = "Date Received:"; sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("C13").value = ""
+
+        # Transaction Overview header & total
+        sht.range("E11:G11").merge(); sht.range("E11").value = "Transaction Overview"
+        sht.range("E12").value = "Record Type / Client"; sht.range("F12").value = "Count"; sht.range("G12").value = "Total Records"
+        sht.range("E14").value = ""; sht.range("F14").value = ""; sht.range("G14").value = 0
+
+        # Small inputs for adding a transaction
+        sht.range("B16:D16").merge(); sht.range("B16").value = "Add Transaction"
+        sht.range("B17").value = "Record Type:"; sht.range("C17").value = ""
+        sht.range("B18").value = "Client:"; sht.range("C18").value = ""
+        sht.range("B19").value = "Amount:"; sht.range("C19").value = ""
+        sht.range("B20").value = "Date (yyyy-mm-dd):"; sht.range("C20").value = ""
+        sht.range("B21").value = "Status:"; sht.range("C21").value = ""
+
+        # Hide gridlines for dashboard feel
+        try:
+            app.api.ActiveWindow.DisplayGridlines = False
+            app.api.ActiveWindow.DisplayHeadings = False
+        except Exception:
+            pass
+
+        # Create hidden Data sheet with headers (table)
+        data_sht = wb.sheets.add("Data")
+        data_sht.name = "Data"
+        # Headers row
+        data_sht.range("A1").value = ["RecordType", "Client", "Amount", "Date", "Status", "Country", "Language"]
+        # Add one sample header format row (keeps column widths)
+        for i, w in enumerate([20, 30, 12, 14, 12, 10, 10], start=1):
+            data_sht.api.Columns(i).ColumnWidth = w
+
+        data_sht.visible = False
+
+        # Save as xlsm
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    time.sleep(0.5)  # let file settle
+
+    # 2) Use openpyxl to add cosmetic styling (keeps vba)
+    wb2 = load_workbook(OUT_FILE, keep_vba=True)
+    ws2 = wb2["Overview"]
+    thin = Side(style='thin', color='000000')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    green_fill = PatternFill("solid", fgColor="2E7D32")
+    gray_fill = PatternFill("solid", fgColor="D9D9D9")
+
+    # style header cell
+    ws2.merge_cells("B2:G3")
+    c = ws2["B2"]
+    c.font = Font(bold=True, size=18, color="FFFFFF")
+    c.fill = green_fill
+    c.alignment = Alignment(horizontal="center", vertical="center")
+
+    # style section titles
+    for cell in ["B5","E5","B11","E11","B16"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = gray_fill
+        ws2[cell].border = border
+
+    # label formatting
+    for r in range(6, 10):
+        ws2[f"B{r}"].font = Font(bold=True)
+        ws2[f"B{r}"].border = border
+        ws2[f"C{r}"].border = border
+        ws2[f"E{r}"].font = Font(bold=True)
+        ws2[f"E{r}"].border = border
+        ws2[f"F{r}"].border = border
+
+    ws2["B12"].font = Font(bold=True); ws2["B12"].border = border; ws2["C12"].border = border
+    ws2["B13"].font = Font(bold=True); ws2["B13"].border = border; ws2["C13"].border = border
+    for ccol in ["E12","F12","G12"]:
+        ws2[ccol].font = Font(bold=True)
+        ws2[ccol].border = border
+
+    # Give Transaction Overview Total cell some fill
+    ws2["G14"].font = Font(bold=True)
+    ws2["G14"].fill = PatternFill("solid", fgColor="FFD966")
+
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    # 3) Re-open with xlwings to add ActiveX controls, shapes and VBA module & assign macros
+    app2 = xw.App(visible=False)
+    try:
+        book = app2.books.open(OUT_FILE)
+        sht = book.sheets["Overview"]
+        data_sht = book.sheets["Data"]
+
+        # Helper to get top/left coordinates of a cell (COM)
+        def cell_left_top(row, col):
+            rng = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+            return rng.Left, rng.Top
+
+        # Add ActiveX TextBoxes (Forms.TextBox.1) and Comboboxes for dropdowns
+        # Client Number
+        left, top = cell_left_top(6, 3)  # place over C6
+        tb1 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=220, Height=18)
+        tb1.Name = "txtClientNumber"
+
+        # CompanyName
+        left, top = cell_left_top(7, 3)
+        tb2 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=320, Height=18)
+        tb2.Name = "txtCompanyName"
+
+        # Country (fixed)
+        left, top = cell_left_top(8, 3)
+        tb3 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=160, Height=18)
+        tb3.Name = "txtCountry"
+        tb3.Object.Text = "USA"
+        tb3.Object.Enabled = False  # non-editable
+
+        # Language (fixed)
+        left, top = cell_left_top(9, 3)
+        tb4 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=160, Height=18)
+        tb4.Name = "txtLanguage"
+        tb4.Object.Text = "English"
+        tb4.Object.Enabled = False
+
+        # Contact textboxes
+        left, top = cell_left_top(6, 6)  # F6
+        tb5 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=220, Height=18)
+        tb5.Name = "txtContactName"
+
+        left, top = cell_left_top(7, 6)  # F7
+        tb6 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=220, Height=18)
+        tb6.Name = "txtContactPhone"
+
+        left, top = cell_left_top(8, 6)  # F8
+        tb7 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=220, Height=18)
+        tb7.Name = "txtContactEmail"
+
+        left, top = cell_left_top(9, 6)  # F9
+        tb8 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=220, Height=18)
+        tb8.Name = "txtContactADP"
+
+        # Period textboxes
+        left, top = cell_left_top(12, 3)  # C12
+        tb9 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=160, Height=18)
+        tb9.Name = "txtDateReceived"
+
+        left, top = cell_left_top(13, 3)  # C13
+        tb10 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                      Left=left+2, Top=top+2, Width=160, Height=18)
+        tb10.Name = "txtDateProcessed"
+
+        # Transaction inputs: RecordType (ComboBox), Client, Amount, Date, Status (ComboBox)
+        left, top = cell_left_top(17, 3)  # C17
+        cmb1 = sht.api.OLEObjects().Add(ClassType="Forms.ComboBox.1", Link=False, DisplayAsIcon=False, _
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        cmb1.Name = "cmbRecordType"
+        # default dropdown items (you can modify later)
+        cmb1.Object.AddItem "Hire"
+        cmb1.Object.AddItem "Terminate"
+        cmb1.Object.AddItem "Transfer"
+        cmb1.Object.AddItem "Correction"
+
+        left, top = cell_left_top(18, 3)  # C18
+        tb_tclient = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                              Left=left+2, Top=top+2, Width=320, Height=18)
+        tb_tclient.Name = "txtTransClient"
+
+        left, top = cell_left_top(19, 3)  # C19
+        tb_amount = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                              Left=left+2, Top=top+2, Width=120, Height=18)
+        tb_amount.Name = "txtTransAmount"
+
+        left, top = cell_left_top(20, 3)  # C20
+        tb_date = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False, _
+                                              Left=left+2, Top=top+2, Width=120, Height=18)
+        tb_date.Name = "txtTransDate"
+
+        left, top = cell_left_top(21, 3)  # C21
+        cmb_status = sht.api.OLEObjects().Add(ClassType="Forms.ComboBox.1", Link=False, DisplayAsIcon=False, _
+                                       Left=left+2, Top=top+2, Width=140, Height=18)
+        cmb_status.Name = "cmbStatus"
+        cmb_status.Object.AddItem "Pending"
+        cmb_status.Object.AddItem "Completed"
+        cmb_status.Object.AddItem "Failed"
+
+        # Add check box ActiveX for test-run (optional)
+        left, top = cell_left_top(23, 2)
+        chk = sht.api.OLEObjects().Add(ClassType="Forms.CheckBox.1", Link=False, DisplayAsIcon=False, _
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        chk.Name = "chkTestRun"
+        chk.Object.Caption = "Test Run (No Update)"
+
+        # Add shape buttons and assign OnAction
+        top_btn = sht.range("B24").top
+        left_btn = sht.range("B24").left + 10
+        btn1 = sht.api.Shapes.AddShape(1, left_btn, top_btn, 140, 28)  # rectangle
+        btn1.TextFrame.Characters.Text = "Add Transaction"
+        # button style
+        btn1.Fill.ForeColor.RGB = 0x2E7D32  # green-ish
+        btn1.TextFrame.Characters.Font.Color = 16777215
+
+        btn2 = sht.api.Shapes.AddShape(1, left_btn + 160, top_btn, 140, 28)
+        btn2.TextFrame.Characters.Text = "Refresh Overview"
+        btn2.Fill.ForeColor.RGB = 0xF6C85F
+        btn2.TextFrame.Characters.Font.Color = 0
+
+        # upload/import buttons
+        btn3 = sht.api.Shapes.AddShape(1, left_btn + 320, top_btn, 140, 28)
+        btn3.TextFrame.Characters.Text = "Create Upload File"
+        btn4 = sht.api.Shapes.AddShape(1, left_btn + 480, top_btn, 140, 28)
+        btn4.TextFrame.Characters.Text = "Import Upload File"
+
+        # Inject VBA module and assign OnAction (macro names will be added below)
+        vbproj = book.api.VBProject
+        comp = vbproj.VBComponents.Add(1)  # 1 = vbext_ct_StdModule
+        comp.Name = VBA_MODULE_NAME
+        comp.CodeModule.AddFromString(VBA_CODE)
+
+        # Assign OnAction to shape buttons
+        btn1.OnAction = VBA_MODULE_NAME + ".AddTransaction"
+        btn2.OnAction = VBA_MODULE_NAME + ".RefreshTransactionOverview"
+        btn3.OnAction = VBA_MODULE_NAME + ".CreateUploadFile"
+        btn4.OnAction = VBA_MODULE_NAME + ".ImportUploadFile"
+
+        # Protect dashboard sheet to prevent editing fixed labels; allow macros to run
+        sht.api.Protect(Password:="adp123", DrawingObjects:=True, Contents:=True, Scenarios:=True, AllowFormattingCells:=True)
+
+        # Save and close
+        book.save(OUT_FILE)
+        book.close()
+    finally:
+        app2.quit()
+
+    print("✅ ADP_Interactive_Dashboard.xlsm created at:", OUT_FILE)
+
+
+if __name__ == "__main__":
+    build_xlsm()
