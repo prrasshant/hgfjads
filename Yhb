@@ -1,0 +1,118 @@
+import xlwings as xw
+from openpyxl import Workbook
+
+OUT_FILE = "Interactive_Dashboard.xlsm"
+
+def build_xlsm():
+    # === Step 1: Create Workbook ===
+    wb = Workbook()
+
+    ws1 = wb.active
+    ws1.title = "Overview"
+    ws2 = wb.create_sheet("Data")
+
+    # Overview layout
+    ws1["B2"] = "Country"
+    ws1["C2"] = "USA"
+    ws1["B3"] = "Language"
+    ws1["C3"] = "English"
+    ws1["B5"] = "Transaction Overview"
+
+    ws1["B6"] = "Client Number"
+    ws1["B7"] = "Company Name"
+    ws1["B8"] = "Record Type"
+    ws1["B9"] = "Client"
+
+    # Data headers
+    ws2.append(["Client Number", "Company Name", "Record Type", "Client"])
+
+    wb.save(OUT_FILE)
+    wb.close()
+
+    # === Step 2: Add ActiveX controls & VBA with xlwings ===
+    app = xw.App(visible=False)
+    book = app.books.open(OUT_FILE)
+    sht = book.sheets["Overview"]
+
+    def cell_left_top(row, col):
+        rng = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+        return rng.Left, rng.Top
+
+    # TextBoxes
+    left, top = cell_left_top(6, 3)
+    tb1 = sht.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                   left+2, top+2, 220, 18)
+    tb1.Name = "txtClientNumber"
+
+    left, top = cell_left_top(7, 3)
+    tb2 = sht.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                   left+2, top+2, 320, 18)
+    tb2.Name = "txtCompanyName"
+
+    # ComboBoxes
+    left, top = cell_left_top(8, 3)
+    cb1 = sht.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                   left+2, top+2, 150, 18)
+    cb1.Name = "cmbRecordType"
+    cb1.Object.AddItem("Purchase")
+    cb1.Object.AddItem("Refund")
+    cb1.Object.AddItem("Adjustment")
+
+    left, top = cell_left_top(9, 3)
+    cb2 = sht.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                   left+2, top+2, 200, 18)
+    cb2.Name = "cmbClient"
+    cb2.Object.AddItem("Client A")
+    cb2.Object.AddItem("Client B")
+    cb2.Object.AddItem("Client C")
+
+    # Total Records counter
+    sht["B11"].value = "Total Records"
+    sht["C11"].formula = f"=COUNTA(Data!A2:A1048576)"
+
+    # === Step 3: Add VBA Macro ===
+    vba_code = r'''
+Sub AddRecord()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    
+    Set ws = ThisWorkbook.Sheets("Data")
+    
+    ' Find next empty row
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    
+    ' Copy values from controls
+    ws.Cells(lastRow, 1).Value = Sheet1.OLEObjects("txtClientNumber").Object.Text
+    ws.Cells(lastRow, 2).Value = Sheet1.OLEObjects("txtCompanyName").Object.Text
+    ws.Cells(lastRow, 3).Value = Sheet1.OLEObjects("cmbRecordType").Object.Value
+    ws.Cells(lastRow, 4).Value = Sheet1.OLEObjects("cmbClient").Object.Value
+    
+    ' Clear input fields
+    Sheet1.OLEObjects("txtClientNumber").Object.Text = ""
+    Sheet1.OLEObjects("txtCompanyName").Object.Text = ""
+    Sheet1.OLEObjects("cmbRecordType").Object.Value = ""
+    Sheet1.OLEObjects("cmbClient").Object.Value = ""
+    
+    MsgBox "Record added successfully!", vbInformation
+End Sub
+'''
+
+    # Insert VBA module
+    book.api.VBProject.VBComponents.Add(1).CodeModule.AddFromString(vba_code)
+
+    # === Step 4: Add a Button linked to Macro ===
+    left, top = cell_left_top(12, 3)
+    btn = sht.api.OLEObjects().Add("Forms.CommandButton.1", False, False, "", "",
+                                   left+2, top+2, 120, 30)
+    btn.Name = "btnAddRecord"
+    btn.Object.Caption = "Add Record"
+    btn.Object.OnAction = "AddRecord"
+
+    # Save and close
+    book.save()
+    book.close()
+    app.quit()
+
+if __name__ == "__main__":
+    build_xlsm()
+    print("✅ Interactive Dashboard created with Add Record button -> Interactive_Dashboard.xlsm")
