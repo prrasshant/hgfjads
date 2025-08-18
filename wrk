@@ -1,0 +1,491 @@
+# create_adp_xlsm.py
+# Next-level interactive & styled ADP_Interactive_Dashboard.xlsm
+# Requirements (Windows + Excel; VBA project access must be trusted):
+#   pip install xlwings openpyxl pywin32
+# Excel: File > Options > Trust Center > Trust Center Settings... >
+#        Macro Settings: "Trust access to the VBA project object model" (checked)
+
+import os
+import time
+import random
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+
+# VBA code to be injected (module)
+VBA_MODULE_NAME = "ADP_Module"
+VBA_CODE = r'''
+Option Explicit
+
+' === GLOBALS ===
+Private gDark As Boolean
+
+Sub CreateUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim clientNum As String, compName As String, country As String, language As String
+    On Error Resume Next
+    clientNum = ws.OLEObjects("txtClientNumber").Object.Text
+    compName  = ws.OLEObjects("txtCompanyName").Object.Text
+    ' Fixed fields read from labels (shapes) to avoid edits
+    country   = "USA"
+    language  = "English"
+    On Error GoTo 0
+    
+    Dim fName As String
+    fName = ThisWorkbook.Path & Application.PathSeparator & "upload_" & clientNum & ".csv"
+    
+    Dim fso As Object, ts As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.CreateTextFile(fName, True, False)
+    
+    ts.WriteLine "ClientNumber,CompanyName,Country,Language"
+    ts.WriteLine """" & clientNum & """,""" & compName & """,""" & country & """,""" & language & """"
+    ts.Close
+    
+    MsgBox "Upload file created: " & vbCrLf & fName, vbInformation, "Create Upload File"
+End Sub
+
+Sub ImportUploadFile()
+    Dim ws As Worksheet, ds As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    Set ds = ThisWorkbook.Worksheets("Data")
+    
+    Dim f As Variant
+    f = Application.GetOpenFilename("CSV Files (*.csv), *.csv", , "Select upload file")
+    If f = False Then Exit Sub
+    
+    Dim fso As Object, ts As Object, header As String, line As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(f, 1, False)
+    If Not ts.AtEndOfStream Then header = ts.ReadLine
+    If Not ts.AtEndOfStream Then
+        line = ts.ReadLine
+        ts.Close
+        Dim parts As Variant
+        parts = Split(line, ",")
+        On Error Resume Next
+        ws.Range("F14").Value = Replace(parts(0), """", "") ' ClientNumber
+        ws.Range("G14").Value = Replace(parts(1), """", "") ' CompanyName
+        ws.Range("H14").Value = "1"                        ' Total Records (demo)
+        On Error GoTo 0
+        Call RefreshKPIs
+        MsgBox "Imported first record from file and refreshed KPIs.", vbInformation, "Import"
+    Else
+        MsgBox "No data lines found.", vbExclamation, "Import"
+    End If
+End Sub
+
+' === NEW: Keep fixed fields & lock them ===
+Sub EnforceFixedFields()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    On Error Resume Next
+    With ws.OLEObjects("txtCountry").Object
+        .Text = "USA"
+        .Locked = True
+        .Enabled = False
+    End With
+    With ws.OLEObjects("txtLanguage").Object
+        .Text = "English"
+        .Locked = True
+        .Enabled = False
+    End With
+    On Error GoTo 0
+    ws.Range("C8").Value = "USA"
+    ws.Range("C9").Value = "English"
+End Sub
+
+' === NEW: KPI Cards text refresh ===
+Sub RefreshKPIs()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    Dim totalRecs As String, comp As String
+    totalRecs = CStr(ws.Range("H14").Value)
+    comp = CStr(ws.Range("G14").Value)
+    If totalRecs = "" Then totalRecs = "0"
+    If comp = "" Then comp = "—"
+    
+    ' Update shape texts
+    Call SetShapeText("kpiTotal", "Total Records" & vbCrLf & totalRecs)
+    Call SetShapeText("kpiCompany", "Company" & vbCrLf & comp)
+    Call SetShapeText("kpiCountry", "Country" & vbCrLf & "USA")
+    Call SetShapeText("kpiLanguage", "Language" & vbCrLf & "English")
+End Sub
+
+Private Sub SetShapeText(ByVal shpName As String, ByVal txt As String)
+    Dim sh As Shape
+    On Error Resume Next
+    Set sh = ThisWorkbook.Worksheets("Overview").Shapes(shpName)
+    If Not sh Is Nothing Then
+        sh.TextFrame.Characters.Text = txt
+        sh.TextFrame.HorizontalAlignment = xlCenter
+        sh.TextFrame.VerticalAlignment = xlCenter
+    End If
+    On Error GoTo 0
+End Sub
+
+' === NEW: Theme Toggle (Light/Dark) ===
+Sub ToggleTheme()
+    gDark = Not gDark
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    If gDark Then
+        ws.Range("B2").Interior.Color = RGB(25, 25, 25)
+        ws.Range("B2").Font.Color = RGB(255, 255, 255)
+        Call PaintCard("kpiTotal", RGB(38, 38, 38), RGB(255, 255, 255))
+        Call PaintCard("kpiCompany", RGB(38, 38, 38), RGB(255, 255, 255))
+        Call PaintCard("kpiCountry", RGB(38, 38, 38), RGB(255, 255, 255))
+        Call PaintCard("kpiLanguage", RGB(38, 38, 38), RGB(255, 255, 255))
+    Else
+        ws.Range("B2").Interior.Color = RGB(46, 125, 50)
+        ws.Range("B2").Font.Color = RGB(255, 255, 255)
+        Call PaintCard("kpiTotal", RGB(242, 242, 242), RGB(0, 0, 0))
+        Call PaintCard("kpiCompany", RGB(242, 242, 242), RGB(0, 0, 0))
+        Call PaintCard("kpiCountry", RGB(242, 242, 242), RGB(0, 0, 0))
+        Call PaintCard("kpiLanguage", RGB(242, 242, 242), RGB(0, 0, 0))
+    End If
+End Sub
+
+Private Sub PaintCard(ByVal shpName As String, ByVal fillRGB As Long, ByVal fontRGB As Long)
+    On Error Resume Next
+    With ThisWorkbook.Worksheets("Overview").Shapes(shpName)
+        .Fill.ForeColor.RGB = fillRGB
+        .TextFrame.Characters.Font.Color = fontRGB
+    End With
+    On Error GoTo 0
+End Sub
+
+' === NEW: Reset Dashboard ===
+Sub ResetDashboard()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    On Error Resume Next
+    ws.OLEObjects("txtClientNumber").Object.Text = ""
+    ws.OLEObjects("txtCompanyName").Object.Text = ""
+    ws.OLEObjects("txtContactName").Object.Text = ""
+    ws.OLEObjects("txtContactPhone").Object.Text = ""
+    ws.OLEObjects("txtContactEmail").Object.Text = ""
+    ws.OLEObjects("txtContactADP").Object.Text = ""
+    ws.OLEObjects("txtDateReceived").Object.Text = ""
+    ws.OLEObjects("txtDateProcessed").Object.Text = ""
+    ws.Range("F14").ClearContents
+    ws.Range("G14").ClearContents
+    ws.Range("H14").ClearContents
+    On Error GoTo 0
+    Call EnforceFixedFields
+    Call RefreshKPIs
+    MsgBox "Dashboard reset.", vbInformation, "Reset"
+End Sub
+
+' === NEW: Export to PDF ===
+Sub ExportOverviewPDF()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    Dim outPath As String
+    outPath = ThisWorkbook.Path & Application.PathSeparator & "Overview_" & Format(Now, "yyyymmdd_HHMM") & ".pdf"
+    ws.ExportAsFixedFormat Type:=xlTypePDF, Filename:=outPath, Quality:=xlQualityStandard, IncludeDocProperties:=True, IgnorePrintAreas:=False, OpenAfterPublish:=False
+    MsgBox "Exported PDF:" & vbCrLf & outPath, vbInformation, "Export"
+End Sub
+
+' === NEW: Help ===
+Sub ShowHelp()
+    Dim msg As String
+    msg = "How to use:" & vbCrLf & _
+          "1) Enter Client Number & Company Name." & vbCrLf & _
+          "2) Click 'Create Upload File' to generate a CSV." & vbCrLf & _
+          "3) Click 'Import Upload File' to load data & refresh KPIs." & vbCrLf & _
+          "4) 'Theme' toggles Light/Dark · 'Reset' clears inputs · 'Export PDF' saves the overview." & vbCrLf & _
+          "Note: Country = USA and Language = English are enforced."
+    MsgBox msg, vbInformation, "Quick Tour"
+End Sub
+'''
+
+def build_xlsm():
+    # remove old file if exists
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    # 1) Create initial workbook with xlwings (so Excel's COM object handles .xlsm)
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        # rename default sheet to Overview
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # set column widths (A..I)
+        widths = [3, 22, 32, 3, 22, 22, 14, 14, 6]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        # Header
+        sht.range("B2:H3").merge()
+        sht.range("B2").value = "PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 18
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = (46, 125, 50)  # green fill
+        sht.range("B2").api.Font.Color = 16777215  # white text
+        sht.range("B2").api.HorizontalAlignment = -4108  # xlCenter
+        sht.range("B2").api.VerticalAlignment = -4108
+
+        # Left: Client Information block
+        sht.range("B5:D5").merge(); sht.range("B5").value = "Client Information"
+        sht.range("B6").value = "Client Number:"; sht.range("C6").value = ""
+        sht.range("B7").value = "Company Name:";  sht.range("C7").value = ""
+        sht.range("B8").value = "Country:";       sht.range("C8").value = "USA"
+        sht.range("B9").value = "Language:";      sht.range("C9").value = "English"
+
+        # Right: Client Contact block
+        sht.range("E5:G5").merge(); sht.range("E5").value = "Client Contact"
+        sht.range("E6").value = "Name:";          sht.range("F6").value = ""
+        sht.range("E7").value = "Phone Number:";  sht.range("F7").value = ""
+        sht.range("E8").value = "Email:";         sht.range("F8").value = ""
+        sht.range("E9").value = "ADP Contact:";   sht.range("F9").value = ""
+
+        # Period block
+        sht.range("B11:D11").merge(); sht.range("B11").value = "Period"
+        sht.range("B12").value = "Date Received:";  sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("C13").value = ""
+
+        # Transaction Overview
+        sht.range("E11:G11").merge(); sht.range("E11").value = "Transaction Overview"
+        sht.range("E12").value = "Record Type"; sht.range("F12").value = "Client #"; sht.range("G12").value = "Total Records"
+        sht.range("E14").value = ""; sht.range("F14").value = ""; sht.range("G14").value = ""; sht.range("H14").value = ""
+
+        # Hide gridlines for dashboard feel
+        try:
+            app.api.ActiveWindow.DisplayGridlines = False
+            app.api.ActiveWindow.DisplayHeadings = False
+        except Exception:
+            pass
+
+        # Create hidden Data sheet
+        data_sht = wb.sheets.add("Data")
+        data_sht.visible = False
+        # Data headers
+        data_sht.range("A1").value = ["ClientNumber","CompanyName","Country","Language"]
+        # Demo monthly trend so the overview has a chart
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        data_sht.range("A3").value = ["Month","Records"]
+        data_sht.range("A4").value = [[m, random.randint(10, 120)] for m in months]
+
+        # Save as xlsm
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    time.sleep(0.5)  # let file settle
+
+    # 2) Use openpyxl to add cosmetic styling (keeps vba)
+    wb2 = load_workbook(OUT_FILE, keep_vba=True)
+    ws2 = wb2["Overview"]
+    thin = Side(style='thin', color='000000')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    green_fill = PatternFill("solid", fgColor="2E7D32")
+    gray_fill = PatternFill("solid", fgColor="D9D9D9")
+    light_card = PatternFill("solid", fgColor="F2F2F2")
+
+    # style header cell
+    ws2.merge_cells("B2:H3")
+    c = ws2["B2"]
+    c.font = Font(bold=True, size=18, color="FFFFFF")
+    c.fill = green_fill
+    c.alignment = Alignment(horizontal="center", vertical="center")
+
+    # section titles
+    for cell in ["B5","E5","B11","E11"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = gray_fill
+        ws2[cell].border = border
+
+    # label formatting & borders
+    for r in range(6, 10):
+        ws2[f"B{r}"].font = Font(bold=True)
+        ws2[f"B{r}"].border = border
+        ws2[f"C{r}"].border = border
+        ws2[f"E{r}"].font = Font(bold=True)
+        ws2[f"E{r}"].border = border
+        ws2[f"F{r}"].border = border
+
+    ws2["B12"].font = Font(bold=True); ws2["B12"].border = border; ws2["C12"].border = border
+    ws2["B13"].font = Font(bold=True); ws2["B13"].border = border; ws2["C13"].border = border
+    for ccol in ["E12","F12","G12"]:
+        ws2[ccol].font = Font(bold=True)
+        ws2[ccol].border = border
+
+    # A soft card area behind KPIs
+    for rng in ["B16:H25"]:
+        for row in ws2[rng]:
+            for cell in row:
+                cell.fill = light_card
+
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    # 3) Re-open with xlwings to add ActiveX controls, shapes, chart, VBA, protection & assign macros
+    app2 = xw.App(visible=False)
+    try:
+        book = app2.books.open(OUT_FILE)
+        sht = book.sheets["Overview"]
+
+        # Helper to get top/left coordinates of a cell (COM)
+        def cell_left_top(row, col):
+            rng = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+            return rng.Left, rng.Top, rng.Width, rng.Height
+
+        # --- ActiveX TextBoxes (inputs) ---
+        left, top, _, _ = cell_left_top(6, 3)  # C6
+        tb1 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        tb1.Name = "txtClientNumber"
+
+        left, top, _, _ = cell_left_top(7, 3)  # C7
+        tb2 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=320, Height=18)
+        tb2.Name = "txtCompanyName"
+
+        # Country & Language: disabled (fixed)
+        left, top, _, _ = cell_left_top(8, 3)  # C8
+        tb3 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=160, Height=18)
+        tb3.Name = "txtCountry"
+        tb3.Object.Text = "USA"
+        tb3.Object.Locked = True
+        tb3.Enabled = False
+
+        left, top, _, _ = cell_left_top(9, 3)  # C9
+        tb4 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=160, Height=18)
+        tb4.Name = "txtLanguage"
+        tb4.Object.Text = "English"
+        tb4.Object.Locked = True
+        tb4.Enabled = False
+
+        # Contact textboxes
+        left, top, _, _ = cell_left_top(6, 6)  # F6
+        tb5 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        tb5.Name = "txtContactName"
+
+        left, top, _, _ = cell_left_top(7, 6)  # F7
+        tb6 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        tb6.Name = "txtContactPhone"
+
+        left, top, _, _ = cell_left_top(8, 6)  # F8
+        tb7 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        tb7.Name = "txtContactEmail"
+
+        left, top, _, _ = cell_left_top(9, 6)  # F9
+        tb8 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=220, Height=18)
+        tb8.Name = "txtContactADP"
+
+        # Period textboxes
+        left, top, _, _ = cell_left_top(12, 3)  # C12
+        tb9 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                       Left=left+2, Top=top+2, Width=160, Height=18)
+        tb9.Name = "txtDateReceived"
+
+        left, top, _, _ = cell_left_top(13, 3)  # C13
+        tb10 = sht.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                                        Left=left+2, Top=top+2, Width=160, Height=18)
+        tb10.Name = "txtDateProcessed"
+
+        # --- KPI Cards (rounded rectangles) ---
+        def add_card(name, cell_addr, title_text):
+            sh = sht.api.Shapes.AddShape(5, sht.range(cell_addr).left, sht.range(cell_addr).top, 180, 60)  # 5 = rounded rect
+            sh.Name = name
+            sh.TextFrame.Characters.Text = title_text
+            sh.Fill.ForeColor.RGB = 0xF2F2F2
+            sh.Line.ForeColor.RGB = 0xDDDDDD
+            sh.TextFrame.Characters.Font.Size = 11
+            sh.TextFrame.Characters.Font.Bold = True
+            sh.TextFrame.HorizontalAlignment = -4108
+            sh.TextFrame.VerticalAlignment = -4108
+            return sh
+
+        add_card("kpiTotal",    "B17", "Total Records" & "\n0")
+        add_card("kpiCompany",  "D17", "Company" & "\n—")
+        add_card("kpiCountry",  "F17", "Country" & "\nUSA")
+        add_card("kpiLanguage", "H17", "Language" & "\nEnglish")
+
+        # --- Small line chart (demo trend) ---
+        chart = sht.api.Shapes.AddChart2(227, 4).Chart  # 4=xlLine
+        chartObj = chart.Parent
+        chartObj.Left = sht.range("B21").left
+        chartObj.Top = sht.range("B21").top
+        chartObj.Width = 520
+        chartObj.Height = 160
+        data_range = book.sheets["Data"].api.Range("B4:B15")  # Records
+        cat_range = book.sheets["Data"].api.Range("A4:A15")   # Months
+        chart.SetSourceData Source:=book.sheets["Data"].api.Range("A3:B15")
+        chart.HasTitle = True
+        chart.ChartTitle.Text = "Monthly Records (Demo)"
+        chart.Axes(1).HasTitle = False
+        chart.Axes(2).HasTitle = False
+
+        # --- Buttons row (rounded rectangles) ---
+        def add_btn(caddr, label, macro_name, w=150):
+            top_btn = sht.range(caddr).top
+            left_btn = sht.range(caddr).left
+            btn = sht.api.Shapes.AddShape(5, left_btn, top_btn, w, 28)
+            btn.TextFrame.Characters.Text = label
+            btn.OnAction = VBA_MODULE_NAME + "." + macro_name
+            btn.Fill.ForeColor.RGB = 0x2E7D32
+            btn.TextFrame.Characters.Font.Color = 0xFFFFFF
+            btn.TextFrame.Characters.Font.Bold = True
+            btn.Line.Visible = False
+            btn.TextFrame.HorizontalAlignment = -4108
+            btn.TextFrame.VerticalAlignment = -4108
+            return btn
+
+        add_btn("B25", "Create Upload File", "CreateUploadFile", 170)
+        add_btn("D25", "Import Upload File", "ImportUploadFile", 170)
+        add_btn("F25", "Theme",             "ToggleTheme",      110)
+        add_btn("G25", "Reset",             "ResetDashboard",   110)
+        add_btn("H25", "Export PDF",        "ExportOverviewPDF",130)
+
+        # Tiny help icon
+        help_sh = sht.api.Shapes.AddShape(9, sht.range("H5").left + 180, sht.range("H5").top - 20, 20, 20)  # 9=oval
+        help_sh.Name = "btnHelp"
+        help_sh.Fill.ForeColor.RGB = 0x2E7D32
+        help_sh.Line.Visible = False
+        help_sh.TextFrame.Characters.Text = "?"
+        help_sh.TextFrame.Characters.Font.Color = 0xFFFFFF
+        help_sh.TextFrame.Characters.Font.Bold = True
+        help_sh.OnAction = VBA_MODULE_NAME + ".ShowHelp"
+
+        # Inject VBA module and assign OnAction
+        vbproj = book.api.VBProject
+        comp = vbproj.VBComponents.Add(1)  # vbext_ct_StdModule
+        comp.Name = VBA_MODULE_NAME
+        comp.CodeModule.AddFromString(VBA_CODE)
+
+        # Protect sheet (but allow macros to write)
+        # First, enforce fixed fields
+        book.api.Application.Run(VBA_MODULE_NAME + ".EnforceFixedFields")
+        # Protection
+        sht.api.Protect(Password="adp_protect", DrawingObjects=True, Contents=True, Scenarios=True, UserInterfaceOnly=True)
+
+        # Save and close
+        book.save(OUT_FILE)
+        book.close()
+    finally:
+        app2.quit()
+
+    print("✅ ADP_Interactive_Dashboard.xlsm created at:", OUT_FILE)
+
+
+if __name__ == "__main__":
+    build_xlsm()
