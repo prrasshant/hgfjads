@@ -1,0 +1,90 @@
+import xlwings as xw
+import openpyxl as px
+from openpyxl import Workbook
+
+OUT_FILE = "Interactive_Dashboard.xlsm"
+
+def build_xlsm():
+    # === Step 1: Create Workbook with openpyxl ===
+    wb = Workbook()
+
+    # Add sheets
+    ws1 = wb.active
+    ws1.title = "Overview"
+    ws2 = wb.create_sheet("Data")
+
+    # Overview headers
+    ws1["B2"] = "Country"
+    ws1["C2"] = "USA"
+    ws1["B3"] = "Language"
+    ws1["C3"] = "English"
+    ws1["B5"] = "Transaction Overview"
+
+    ws1["B6"] = "Client Number"
+    ws1["B7"] = "Company Name"
+    ws1["B8"] = "Record Type"
+    ws1["B9"] = "Client"
+
+    # Data headers
+    ws2.append(["Client Number", "Company Name", "Record Type", "Client"])
+
+    # Save as xlsm
+    wb.save(OUT_FILE)
+    wb.close()
+
+    # === Step 2: Add ActiveX controls with xlwings ===
+    app = xw.App(visible=False)
+    book = app.books.open(OUT_FILE)
+    sht = book.sheets["Overview"]
+    data_sht = book.sheets["Data"]
+
+    # helper to get Excel cell coordinates
+    def cell_left_top(row, col):
+        rng = sht.api.Range(sht.api.Cells(row, col), sht.api.Cells(row, col))
+        return rng.Left, rng.Top
+
+    # 1) Client Number TextBox
+    left, top = cell_left_top(6, 3)
+    tb1 = sht.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                   left+2, top+2, 220, 18)
+    tb1.Name = "txtClientNumber"
+
+    # 2) Company Name TextBox
+    left, top = cell_left_top(7, 3)
+    tb2 = sht.api.OLEObjects().Add("Forms.TextBox.1", False, False, "", "",
+                                   left+2, top+2, 320, 18)
+    tb2.Name = "txtCompanyName"
+
+    # 3) Record Type ComboBox
+    left, top = cell_left_top(8, 3)
+    cb1 = sht.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                   left+2, top+2, 150, 18)
+    cb1.Name = "cmbRecordType"
+
+    # Fill dropdown with values
+    cb1.Object.AddItem("Purchase")
+    cb1.Object.AddItem("Refund")
+    cb1.Object.AddItem("Adjustment")
+
+    # 4) Client ComboBox
+    left, top = cell_left_top(9, 3)
+    cb2 = sht.api.OLEObjects().Add("Forms.ComboBox.1", False, False, "", "",
+                                   left+2, top+2, 200, 18)
+    cb2.Name = "cmbClient"
+
+    cb2.Object.AddItem("Client A")
+    cb2.Object.AddItem("Client B")
+    cb2.Object.AddItem("Client C")
+
+    # 5) Total Records counter
+    sht["B11"].value = "Total Records"
+    sht["C11"].formula = f"=COUNTA(Data!A2:A1048576)"
+
+    # Save and close
+    book.save()
+    book.close()
+    app.quit()
+
+if __name__ == "__main__":
+    build_xlsm()
+    print("✅ Interactive Dashboard created successfully -> Interactive_Dashboard.xlsm")
