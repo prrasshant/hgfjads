@@ -1,0 +1,196 @@
+import os
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+# Output file name
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsm")
+
+# VBA Module Code
+VBA_MODULE_NAME = "ADP_Module"
+VBA_CODE = r'''
+Option Explicit
+
+Sub CreateUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim clientNum As String, compName As String
+    On Error Resume Next
+    clientNum = ws.OLEObjects("txtClientNumber").Object.Text
+    compName  = ws.OLEObjects("txtCompanyName").Object.Text
+    On Error GoTo 0
+    
+    Dim fName As String
+    fName = ThisWorkbook.Path & Application.PathSeparator & "upload_" & clientNum & ".csv"
+    
+    Dim fso As Object, ts As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.CreateTextFile(fName, True, False)
+    
+    ts.WriteLine "ClientNumber,CompanyName,Country,Language"
+    ts.WriteLine """" & clientNum & """,""" & compName & """,""USA"",""English"""
+    ts.Close
+    
+    MsgBox "Upload file created: " & vbCrLf & fName, vbInformation, "Create Upload File"
+End Sub
+
+Sub ImportUploadFile()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Overview")
+    
+    Dim f As Variant
+    f = Application.GetOpenFilename("CSV Files (*.csv), *.csv", , "Select upload file")
+    If f = False Then Exit Sub
+    
+    Dim fso As Object, ts As Object, header As String, line As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(f, 1, False)
+    If Not ts.AtEndOfStream Then header = ts.ReadLine
+    If Not ts.AtEndOfStream Then
+        line = ts.ReadLine
+        ts.Close
+        Dim parts As Variant
+        parts = Split(line, ",")
+        On Error Resume Next
+        Dim nextRow As Long
+        nextRow = ws.Cells(ws.Rows.Count, "E").End(-4162).Row + 1
+        ws.Cells(nextRow, "E").Value = Replace(parts(0), """", "")
+        ws.Cells(nextRow, "F").Value = Replace(parts(1), """", "")
+        ws.Cells(nextRow, "G").Value = Now
+        On Error GoTo 0
+        MsgBox "Imported record into row " & nextRow & ".", vbInformation, "Import"
+    Else
+        MsgBox "No data lines found.", vbExclamation, "Import"
+    End If
+End Sub
+'''
+
+def build_adp_dashboard():
+    # Step 1: Create Workbook and Layout
+    app = xw.App(visible=False)
+    wb = xw.Book()
+    wb.sheets[0].name = "Overview"
+    ws = wb.sheets["Overview"]
+
+    # Title and headers
+    ws.range("B2").value = "ADP INTERACTIVE DASHBOARD"
+    ws.range("B5").value = "Client Information"
+    ws.range("E5").value = "Contact Details"
+    ws.range("B11").value = "Payroll Period"
+    ws.range("E11").value = "Transaction Overview"
+    ws.range("B6").value = "Client Number:"
+    ws.range("B7").value = "Company Name:"
+    ws.range("B8").value = "Country:"
+    ws.range("B9").value = "Language:"
+    ws.range("E6").value = "Contact Person:"
+    ws.range("E7").value = "Contact Email:"
+    ws.range("E8").value = "Phone Number:"
+    ws.range("E9").value = "ADP Manager:"
+    ws.range("B12").value = "Start Date:"
+    ws.range("B13").value = "End Date:"
+    ws.range("E12:H12").value = [["Client Number", "Company Name", "Timestamp", "Status"]]
+    ws.range("H13").formula = '=COUNTA(E13:E1000)'
+
+    # Insert ActiveX textboxes
+    ws.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                            Left=ws.range("C6").left, Top=ws.range("C6").top,
+                            Width=120, Height=18).Name = "txtClientNumber"
+    ws.api.OLEObjects().Add(ClassType="Forms.TextBox.1", Link=False, DisplayAsIcon=False,
+                            Left=ws.range("C7").left, Top=ws.range("C7").top,
+                            Width=120, Height=18).Name = "txtCompanyName"
+
+    # Buttons
+    ws.api.OLEObjects().Add(ClassType="Forms.CommandButton.1", Link=False, DisplayAsIcon=False,
+                            Left=ws.range("B15").left, Top=ws.range("B15").top,
+                            Width=130, Height=25).Object.Caption = "Create Upload File"
+
+    ws.api.OLEObjects().Add(ClassType="Forms.CommandButton.1", Link=False, DisplayAsIcon=False,
+                            Left=ws.range("E15").left, Top=ws.range("E15").top,
+                            Width=130, Height=25).Object.Caption = "Import File"
+
+    # Add VBA
+    vba_module = wb.api.VBProject.VBComponents.Add(1)
+    vba_module.Name = VBA_MODULE_NAME
+    vba_module.CodeModule.AddFromString(VBA_CODE)
+
+    # Save as macro-enabled
+    wb.save(OUT_FILE)
+    wb.close()
+    app.quit()
+
+    # Step 2: Style using openpyxl
+    style_adp_dashboard(OUT_FILE)
+
+def style_adp_dashboard(path):
+    wb2 = load_workbook(path, keep_vba=True)
+    ws2 = wb2["Overview"]
+
+    thin = Side(style='thin', color='000000')
+    medium = Side(style='medium', color='000000')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    outer_border = Border(left=medium, right=medium, top=medium, bottom=medium)
+
+    green_fill = PatternFill("solid", fgColor="2E7D32")
+    gray_fill = PatternFill("solid", fgColor="D9D9D9")
+    light_fill = PatternFill("solid", fgColor="F2F2F2")
+    section_fill = PatternFill("solid", fgColor="E8F5E9")
+    white_fill = PatternFill("solid", fgColor="FFFFFF")
+
+    # Title styling
+    ws2.merge_cells("B2:G3")
+    cell = ws2["B2"]
+    cell.font = Font(size=18, bold=True, color="FFFFFF")
+    cell.fill = green_fill
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Section headers
+    for cell in ["B5", "E5", "B11", "E11"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = gray_fill
+        ws2[cell].border = border
+
+    # Info blocks
+    for r in range(6, 10):
+        for c in ["B", "C"]:
+            cell = ws2[f"{c}{r}"]
+            cell.border = border
+            cell.fill = white_fill if c == "C" else section_fill
+            cell.font = Font(bold=(c == "B"))
+        for c in ["E", "F"]:
+            cell = ws2[f"{c}{r}"]
+            cell.border = border
+            cell.fill = white_fill if c == "F" else section_fill
+            cell.font = Font(bold=(c == "E"))
+
+    for r in [12, 13]:
+        for c in ["B", "C"]:
+            cell = ws2[f"{c}{r}"]
+            cell.border = border
+            cell.fill = white_fill if c == "C" else section_fill
+            cell.font = Font(bold=(c == "B"))
+
+    for c in ["E12", "F12", "G12", "H12"]:
+        cell = ws2[c]
+        cell.font = Font(bold=True)
+        cell.fill = light_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    ws2["H13"].border = border
+    ws2["H13"].fill = white_fill
+
+    # Outer box around dashboard
+    for row in range(2, 14):
+        for col in range(2, 9):  # B to H
+            cell = ws2.cell(row=row, column=col)
+            if row in [2, 13] or col in [2, 8]:
+                cell.border = outer_border
+
+    wb2.save(path)
+    wb2.close()
+
+# 🚀 Run the script
+if __name__ == "__main__":
+    build_adp_dashboard()
+    print(f"Dashboard created at: {OUT_FILE}")
