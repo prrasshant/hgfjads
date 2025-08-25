@@ -1,0 +1,152 @@
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard(updated)1.xlsx")
+
+def build_xlsm():
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        widths = [3, 20, 30, 3, 20, 20, 15, 15]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        app.api.ActiveWindow.DisplayGridlines = True
+        app.api.ActiveWindow.DisplayHeadings = False
+
+        # Title
+        header_color = (59, 89, 152)
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 18
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = header_color
+        sht.range("B2").api.Font.Color = 0xFFFFFF
+        sht.range("B2").api.HorizontalAlignment = -4108
+        sht.range("B2").api.VerticalAlignment = -4108
+
+        # Client Info
+        sht.range("B5:C9").color = (234, 242, 255)
+        sht.range("B5:C5").merge(); sht.range("B5").value = "👤 Client Information"
+        sht.range("B5").api.Font.Size = 12
+        sht.range("B5").api.Font.Bold = True
+        sht.range("B5").api.Font.Color = 0xFFFFFF
+        sht.range("B6").value = "Client Number:"; sht.range("C6").value = ""
+        sht.range("B7").value = "Company Name:";  sht.range("C7").value = ""
+        sht.range("B8").value = "Country:";       sht.range("C8").value = "USA"
+        sht.range("B9").value = "Language:";      sht.range("C9").value = "English"
+
+        # Contact
+        sht.range("E5:G9").color = (234, 242, 255)
+        sht.range("E5:G5").merge(); sht.range("E5").value = "📞 Contact Details"
+        sht.range("E5").api.Font.Size = 12
+        sht.range("E5").api.Font.Bold = True
+        sht.range("E5").api.Font.Color = 0xFFFFFF
+        sht.range("E6").value = "Name:"; sht.range("F6").value = ""; sht.range("F6:G6").merge()
+        sht.range("E7").value = "Phone Number:"; sht.range("F7").value = ""; sht.range("F7:G7").merge()
+        sht.range("E8").value = "Email:"; sht.range("F8").value = ""; sht.range("F8:G8").merge()
+        sht.range("E9").value = "ADP Contact:"; sht.range("F9").value = ""; sht.range("F9:G9").merge()
+
+        # Period
+        sht.range("B11:C13").color = (234, 242, 255)
+        sht.range("B11:C11").merge(); sht.range("B11").value = "🗓️ Period"
+        sht.range("B11").api.Font.Size = 12
+        sht.range("B11").api.Font.Bold = True
+        sht.range("B11").api.Font.Color = 0x2F5496
+        sht.range("B12").value = "Date Received:"; sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("C13").value = ""
+
+        # Transaction Overview (LIST FORMAT like in image)
+        sht.range("E11:G11").merge()
+        sht.range("E11").value = "🧾 Transaction Overview"
+        sht.range("E11").api.Font.Size = 12
+        sht.range("E11").api.Font.Bold = True
+        sht.range("E11").api.Font.Color = 0x2F5496
+
+        # Example Records (list style)
+        sht.range("E13").value = "Record Type"
+        sht.range("F13").value = "Record Count"
+
+        sht.range("E14").value = "T558B & T558C"
+        sht.range("F14").value = 0
+
+        # Total Records (sum)
+        sht.range("E15").value = "Total Records -"
+        sht.range("F15").formula = "=SUM(F14:F1000)"
+
+        wb.sheets.add("Data").visible = False
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    time.sleep(0.5)
+
+    # Styling and protection
+    wb2 = load_workbook(OUT_FILE)
+    ws2 = wb2["Overview"]
+
+    border = Border(left=Side(style='medium'), right=Side(style='medium'),
+                    top=Side(style='medium'), bottom=Side(style='medium'))
+    blue_fill = PatternFill("solid", fgColor="2F5496")
+    gray_fill = PatternFill("solid", fgColor="D9D9D9")
+    light_fill = PatternFill("solid", fgColor="F2F2F2")
+
+    # Title styling
+    ws2.merge_cells("B2:G3")
+    title = ws2["B2"]
+    title.font = Font(size=20, bold=True, color="FFFFFF")
+    title.fill = blue_fill
+    title.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Headers
+    for cell in ["B5", "E5", "B11", "E11"]:
+        ws2[cell].font = Font(bold=True)
+        ws2[cell].fill = gray_fill
+        ws2[cell].border = border
+
+    # Transaction overview styling
+    ws2["E13"].font = Font(bold=True)
+    ws2["F13"].font = Font(bold=True)
+    ws2["E13"].fill = light_fill
+    ws2["F13"].fill = light_fill
+    ws2["E13"].border = border
+    ws2["F13"].border = border
+    ws2["E14"].border = border
+    ws2["F14"].border = border
+    ws2["E15"].font = Font(bold=True)
+    ws2["F15"].font = Font(bold=True)
+
+    # Protect sheet
+    for row in ws2.iter_rows():
+        for cell in row:
+            cell.protection = cell.protection.copy(locked=True)
+
+    input_cells = ["C6", "C7", "C12", "C13", "F6", "F7", "F8", "F9"]
+    for c in input_cells:
+        ws2[c].protection = ws2[c].protection.copy(locked=False)
+
+    ws2.protection.sheet = True
+    ws2.protection.password = "adp123"
+    ws2.protection.enable()
+
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    print("✅ ADP_Interactive_Dashboard.xlsx created at:", OUT_FILE)
+
+if __name__ == "__main__":
+    build_xlsm()
