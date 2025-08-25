@@ -1,0 +1,135 @@
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard(updated)1.xlsx")
+
+def build_xlsm():
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        widths = [3, 20, 30, 3, 20, 20, 15, 15]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        app.api.ActiveWindow.DisplayGridlines = True
+        app.api.ActiveWindow.DisplayHeadings = False
+
+        # Title
+        header_color = (59, 89, 152)
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 18
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = header_color
+        sht.range("B2").api.Font.Color = 0xFFFFFF
+        sht.range("B2").api.HorizontalAlignment = -4108
+        sht.range("B2").api.VerticalAlignment = -4108
+
+        # Client Info
+        sht.range("B5:C9").color = (234, 242, 255)
+        sht.range("B5:C5").merge(); sht.range("B5").value = "👤 Client Information"
+        sht.range("B5").api.Font.Size = 12
+        sht.range("B5").api.Font.Bold = True
+        sht.range("B5").api.Font.Color = 0xFFFFFF
+        sht.range("B6").value = "Client Number:"; sht.range("C6").value = ""
+        sht.range("B7").value = "Company Name:";  sht.range("C7").value = ""
+        sht.range("B8").value = "Country:";       sht.range("C8").value = "USA"
+        sht.range("B9").value = "Language:";      sht.range("C9").value = "English"
+
+        # Contact
+        sht.range("E5:G9").color = (234, 242, 255)
+        sht.range("E5:G5").merge(); sht.range("E5").value = "📞 Contact Details"
+        sht.range("E5").api.Font.Size = 12
+        sht.range("E5").api.Font.Bold = True
+        sht.range("E5").api.Font.Color = 0xFFFFFF
+        sht.range("E6").value = "Name:"; sht.range("F6").value = ""; sht.range("F6:G6").merge()
+        sht.range("E7").value = "Phone Number:"; sht.range("F7").value = ""; sht.range("F7:G7").merge()
+        sht.range("E8").value = "Email:"; sht.range("F8").value = ""; sht.range("F8:G8").merge()
+        sht.range("E9").value = "ADP Contact:"; sht.range("F9").value = ""; sht.range("F9:G9").merge()
+
+        # Period
+        sht.range("B11:C13").color = (234, 242, 255)
+        sht.range("B11:C11").merge(); sht.range("B11").value = "🗓️ Period"
+        sht.range("B11").api.Font.Size = 12
+        sht.range("B11").api.Font.Bold = True
+        sht.range("B11").api.Font.Color = 0x2F5496
+        sht.range("B12").value = "Date Received:"; sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("C13").value = ""
+
+        # Transaction Overview (with ListBox)
+        sht.range("E11:G11").merge()
+        sht.range("E11").value = "🧾 Transaction Overview"
+        sht.range("E11").api.Font.Size = 12
+        sht.range("E11").api.Font.Bold = True
+        sht.range("E11").api.Font.Color = 0x2F5496
+
+        # Insert ListBox ActiveX
+        listbox = sht.api.OLEObjects().Add(
+            ClassType="Forms.ListBox.1",
+            Left=sht.range("E12").left,
+            Top=sht.range("E12").top,
+            Width=250,
+            Height=100
+        )
+        listbox.Name = "lstTransactions"
+
+        # Add "Total Records" cell below
+        sht.range("E17").value = "Total Records:"
+        sht.range("F17").formula = "=SUMPRODUCT(--ISNUMBER(SEARCH(\" - \",lstTransactions.List)))"  # Placeholder
+
+        # Add hidden data sheet
+        wb.sheets.add("Data").visible = False
+
+        wb.save(OUT_FILE)
+        wb.close()
+
+    finally:
+        app.quit()
+
+    # Populate listbox dynamically (open workbook with xlwings again)
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.open(OUT_FILE)
+        sht = wb.sheets["Overview"]
+
+        # Build transaction overview from sheets
+        transaction_data = []
+        for sheet in wb.sheets:
+            if sheet.name not in ["Overview", "Data"]:
+                last_row = sheet.range("A" + str(sheet.cells.last_cell.row)).end("up").row
+                record_count = max(0, last_row - 1)  # assuming row 1 = headers
+                transaction_data.append(f"{sheet.name} - {record_count}")
+
+        # Fill listbox items
+        if transaction_data:
+            lst = sht.api.OLEObjects("lstTransactions").Object
+            lst.Clear()
+            for item in transaction_data:
+                lst.AddItem(item)
+
+            # Total Records
+            total = sum(int(item.split(" - ")[1]) for item in transaction_data)
+            sht.range("F17").value = total
+
+        wb.save()
+        wb.close()
+    finally:
+        app.quit()
+
+    print("✅ ADP_Interactive_Dashboard.xlsx created with Transaction Overview ListBox at:", OUT_FILE)
+
+if __name__ == "__main__":
+    build_xlsm()
