@@ -1,0 +1,56 @@
+Key Features Added:
+Data Sheet Connection: Created a "Data" worksheet that stores the transaction data
+
+Automatic Data Reading: The ListBox now reads data from the Data sheet instead of hardcoded values
+
+Dynamic Total Calculation: Total Records is calculated from the actual data in the Data sheet
+
+Refresh Button: Added a "Refresh Data" button that reloads data from the Data sheet
+
+VBA Macro: Included VBA code to handle the refresh functionality
+
+How It Works:
+Data Storage: All transaction data is stored in the "Data" worksheet (columns A and B)
+
+Data Loading: When the dashboard opens, it reads data from the Data sheet
+
+ListBox Population: The ListBox is populated with data from the Data sheet
+
+Total Calculation: The total is calculated by summing all values in column B of the Data sheet
+
+Refresh Functionality: Clicking "Refresh Data" reloads the data and updates the ListBox and total
+
+Now you can:
+
+Edit the data in the "Data" worksheet
+
+Click "Refresh Data" to update the ListBox and total
+
+The Total Records will always reflect the current data in the Data sheet
+
+This makes your dashboard dynamic and connected to an external data source!
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Key Features:
+Automatic Data Detection: The code checks if a "TransactionData" sheet exists
+
+Dynamic Data Loading: If the sheet exists, it reads data from columns A and B
+
+Automatic Total Calculation: Calculates the sum of all values in column B (Record Count)
+
+Fallback Mechanism: If no data sheet is found, uses sample data
+
+Auto-Refresh: Includes VBA code to automatically refresh data when the workbook opens
+
+Manual Refresh: You can run the "RefreshDataFromSheet" macro anytime to update data
+
+How to Use:
+Add Data: Edit the "TransactionData" sheet with your record types and counts
+
+Auto-Update: The dashboard automatically refreshes when opened
+
+Manual Refresh: Run the "RefreshDataFromSheet" macro to update anytime
+
+Total Calculation: The total records count is always calculated from column B values
+
+The dashboard now dynamically connects to your Excel data and automatically calculates totals!
+
