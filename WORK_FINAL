@@ -1,0 +1,377 @@
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsx")
+
+def build_xlsm():
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        
+        # Create Overview sheet first
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # Check if TransactionData sheet exists, if not create it with sample data
+        try:
+            data_sht = wb.sheets("TransactionData")
+            print("TransactionData sheet already exists, will use existing data")
+        except:
+            print("Creating TransactionData sheet with sample data")
+            data_sht = wb.sheets.add("TransactionData")
+            data_sht.visible = False
+            
+            # Sample transaction data in TransactionData sheet
+            transactions_data = [
+                ["Record Type", "Record Count"],
+                ["Payroll", 120],
+                ["Benefits", 85],
+                ["Expenses", 45],
+                ["Leave", 62],
+                ["Training", 30],
+                ["Travel", 18],
+                ["Compliance", 12],
+                ["Recruitment", 25],
+                ["Onboarding", 38],
+                ["Terminations", 15],
+                ["Performance", 22],
+                ["Compensation", 28]
+            ]
+            
+            # Write data to TransactionData sheet
+            for i, row in enumerate(transactions_data, start=1):
+                for j, value in enumerate(row, start=1):
+                    data_sht.range(i, j).value = value
+        
+        # Set column widths for better layout
+        widths = [2, 18, 25, 2, 18, 18, 15, 15]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        # Set row heights for better spacing
+        row_heights = {
+            2: 30, 3: 30,  # Title rows
+            5: 25, 6: 22, 7: 22, 8: 22, 9: 22,  # Client Info and Contact rows
+            11: 25, 12: 22, 13: 22, 14: 22,  # Period headers
+            15: 25,  # Total Records section
+            17: 120  # Space for listbox
+        }
+        for row, height in row_heights.items():
+            sht.api.Rows(row).RowHeight = height
+
+        app.api.ActiveWindow.DisplayGridlines = False
+        app.api.ActiveWindow.DisplayHeadings = False
+
+        # Title - Centered and prominent
+        header_color = (47, 84, 150)  # Darker blue for professional look
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "ADP - PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 20
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = header_color
+        sht.range("B2").api.Font.Color = 0xFFFFFF
+        sht.range("B2").api.HorizontalAlignment = -4108  # Center
+        sht.range("B2").api.VerticalAlignment = -4108  # Center
+        sht.range("B2").api.BorderAround(1, 4)  # Medium border
+
+        # Client Info - Clean and organized
+        client_info_color = (240, 248, 255)  # Very light blue
+        sht.range("B5:C9").color = client_info_color
+        sht.range("B5:C5").merge(); sht.range("B5").value = "👤 Client Information"
+        sht.range("B5").api.Font.Size = 12
+        sht.range("B5").api.Font.Bold = True
+        sht.range("B5").api.Font.Color = 0x2F5496  # Dark blue text
+        sht.range("B5").api.HorizontalAlignment = -4108  # Center
+        
+        # Client info labels and values
+        labels = ["Client Number:", "Company Name:", "Country:", "Language:"]
+        values = ["", "", "USA", "English"]
+        for i, (label, value) in enumerate(zip(labels, values), start=6):
+            sht.range(f"B{i}").value = label
+            sht.range(f"B{i}").api.Font.Bold = True
+            sht.range(f"C{i}").value = value
+            if value:  # Style non-empty values
+                sht.range(f"C{i}").api.Font.Color = 0x2F5496
+
+        # Contact - Matching style to Client Info
+        sht.range("E5:G9").color = client_info_color
+        sht.range("E5:G5").merge(); sht.range("E5").value = "📞 Contact Details"
+        sht.range("E5").api.Font.Size = 12
+        sht.range("E5").api.Font.Bold = True
+        sht.range("E5").api.Font.Color = 0x2F5496
+        sht.range("E5").api.HorizontalAlignment = -4108  # Center
+        
+        # Contact labels
+        contact_labels = ["Name:", "Phone Number:", "Email:", "ADP Contact:"]
+        for i, label in enumerate(contact_labels, start=6):
+            sht.range(f"E{i}").value = label
+            sht.range(f"E{i}").api.Font.Bold = True
+            sht.range(f"F{i}").value = ""
+            sht.range(f"F{i}:G{i}").merge()
+
+        # Period - Clean section
+        period_color = (240, 248, 255)  # Matching light blue
+        sht.range("B11:C13").color = period_color
+        sht.range("B11:C11").merge(); sht.range("B11").value = "🗓️ Period"
+        sht.range("B11").api.Font.Size = 12
+        sht.range("B11").api.Font.Bold = True
+        sht.range("B11").api.Font.Color = 0x2F5496
+        sht.range("B11").api.HorizontalAlignment = -4108  # Center
+        
+        sht.range("B12").value = "Date Received:"
+        sht.range("B12").api.Font.Bold = True
+        sht.range("C12").value = ""
+        
+        sht.range("B13").value = "Date Processed:"
+        sht.range("B13").api.Font.Bold = True
+        sht.range("C13").value = ""
+
+        # Total Records Section - Single cell below Period table
+        total_records_color = (220, 230, 245)  # Different color to stand out
+        sht.range("B15:C15").color = total_records_color
+        sht.range("B15:C15").merge()
+        sht.range("B15").value = "Total Records: Calculating..."  # Temporary placeholder
+        sht.range("B15").api.Font.Bold = True
+        sht.range("B15").api.Font.Size = 12
+        sht.range("B15").api.Font.Color = 0x2F5496
+        sht.range("B15").api.HorizontalAlignment = -4108  # Center
+
+        # Transaction Overview - For the listbox
+        transaction_color = (240, 248, 255)  # Matching light blue
+        sht.range("E11:G17").color = transaction_color
+        sht.range("E11:G11").merge(); sht.range("E11").value = "🧾 Transaction Overview"
+        sht.range("E11").api.Font.Size = 12
+        sht.range("E11").api.Font.Bold = True
+        sht.range("E11").api.Font.Color = 0x2F5496
+        sht.range("E11").api.HorizontalAlignment = -4108  # Center
+        
+        # Add a subtle border around all sections
+        for range_addr in ["B5:C9", "E5:G9", "B11:C13", "B15:C15", "E11:G17"]:
+            sht.range(range_addr).api.BorderAround(1, 1)  # Thin border
+
+        # PROTECTION SETUP - Lock all cells first (using openpyxl for proper locking)
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    time.sleep(0.5)
+
+    # Use openpyxl to properly lock all cells first
+    wb2 = load_workbook(OUT_FILE)
+    ws = wb2["Overview"]
+    
+    # Lock ALL cells first
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.protection = cell.protection.copy(locked=True)
+    
+    # Now unlock specific cells that should be editable
+    editable_cells = [
+        "C6", "C7",  # Client Number, Company Name
+        "F6", "F7", "F8", "F9",  # Contact details
+        "C12", "C13"  # Date Received, Date Processed
+    ]
+    
+    for cell_ref in editable_cells:
+        ws[cell_ref].protection = ws[cell_ref].protection.copy(locked=False)
+    
+    # Also make TransactionData sheet editable if it exists
+    if "TransactionData" in wb2.sheetnames:
+        ws_data = wb2["TransactionData"]
+        for row in ws_data.iter_rows():
+            for cell in row:
+                cell.protection = cell.protection.copy(locked=False)
+    
+    # Save with protection setup
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    time.sleep(0.5)
+
+    # Final pass to add the listbox and total records
+    app3 = xw.App(visible=True)
+    try:
+        book = app3.books.open(OUT_FILE)
+        sht = book.sheets["Overview"]
+        
+        # Try to get TransactionData sheet
+        try:
+            data_sht = book.sheets["TransactionData"]
+            data_exists = True
+        except:
+            data_exists = False
+            print("TransactionData sheet not found")
+        
+        # Unprotect the sheet first to add controls
+        sht.api.Unprotect("adp123")
+        
+        # Clear any existing data in the transaction area
+        sht.range("E12:G100").clear()
+        
+        # Read data from TransactionData sheet if it exists
+        transactions = []
+        total_records = 0
+        
+        if data_exists:
+            # Get all data from TransactionData sheet (skip header row)
+            data_range = data_sht.range("A2:B100")  # Adjust range as needed
+            data_values = data_range.value
+            
+            if data_values:
+                if isinstance(data_values[0], list):  # Multiple rows
+                    for row in data_values:
+                        if row and row[0] and row[1] is not None:  # Check if both cells have values
+                            transactions.append((row[0], row[1]))
+                            if isinstance(row[1], (int, float)):
+                                total_records += row[1]
+                else:  # Single row
+                    if data_values[0] and data_values[1] is not None:
+                        transactions.append((data_values[0], data_values[1]))
+                        if isinstance(data_values[1], (int, float)):
+                            total_records += data_values[1]
+        
+        # If no data found, use fallback data
+        if not transactions:
+            print("No data found in TransactionData sheet, using fallback data")
+            fallback_data = [
+                ("Payroll", 120),
+                ("Benefits", 85),
+                ("Expenses", 45),
+                ("Leave", 62),
+                ("Training", 30),
+                ("Travel", 18),
+                ("Compliance", 12)
+            ]
+            transactions = fallback_data
+            total_records = sum(rec[1] for rec in fallback_data)
+        
+        # Add listbox directly under Transaction Overview header
+        try:
+            # Get position for listbox (aligned with Transaction Overview section)
+            listbox_cell = sht.range("E12")  # Positioned at row 12, column E
+            left = listbox_cell.left
+            top = listbox_cell.top
+            width = sht.range("E11:G11").width - 5  # Match section width with slight padding
+            height = 100  # Height for listbox
+            
+            # Create the listbox
+            listbox = sht.api.OLEObjects().Add(ClassType="Forms.ListBox.1", 
+                                              Left=left, 
+                                              Top=top, 
+                                              Width=width, 
+                                              Height=height)
+            listbox.Name = "lstTransactions"
+            listbox.Object.MultiSelect = 0  # Single selection
+            listbox.Object.ColumnCount = 2
+            listbox.Object.ColumnWidths = "200;80"
+            listbox.Object.IntegralHeight = False  # Enable scrollbar
+            
+            # Add column headers directly in the listbox
+            listbox.Object.ColumnHeads = True
+            
+            # Prepare data with headers as first row
+            data = [["Record Type", "Record Count"]]  # Headers as first row
+            for rec in transactions:
+                data.append([rec[0], rec[1]])
+            
+            # Assign data to listbox
+            listbox.Object.List = data
+            
+            # Add scrollbars
+            listbox.Object.ScrollBars = 3  # fmScrollBarsBoth
+            
+            # Style the listbox to match the dashboard
+            listbox.Object.BackColor = 0xF0F8FF  # Light blue background
+            listbox.Object.BorderColor = 0x2F5496  # Dark blue border
+            listbox.Object.BorderStyle = 1  # Single border
+            listbox.Object.Font.Size = 10
+            listbox.Object.Font.Name = "Calibri"
+            
+            # Make headers bold
+            time.sleep(0.5)
+            try:
+                listbox.Object.Font.Bold = True
+            except:
+                pass
+            
+            print("ActiveX ListBox created successfully!")
+            
+        except Exception as e:
+            print(f"Error creating ListBox: {e}")
+            # Fallback: show data in cells with styling
+            for i, (rec_type, count) in enumerate(transactions, start=12):
+                sht.range(f"E{i}").value = rec_type
+                sht.range(f"F{i}").value = count
+                sht.range(f"E{i}").api.HorizontalAlignment = -4131  # Left
+                sht.range(f"F{i}").api.HorizontalAlignment = -4152  # Right
+        
+        # Calculate and display Total Records
+        sht.range("B15").value = f"Total Records: {total_records}"
+        
+        # Now apply protection with password - THIS IS CRUCIAL
+        sht.api.Protect("adp123", 
+                       DrawingObjects=True,    # Protect shapes and controls
+                       Contents=True,          # Protect locked cells
+                       Scenarios=True,         # Protect scenarios
+                       UserInterfaceOnly=True, # Allow VBA to modify
+                       AllowFormattingCells=False,
+                       AllowFormattingColumns=False,
+                       AllowFormattingRows=False,
+                       AllowInsertingColumns=False,
+                       AllowInsertingRows=False,
+                       AllowInsertingHyperlinks=False,
+                       AllowDeletingColumns=False,
+                       AllowDeletingRows=False,
+                       AllowSorting=False,
+                       AllowFiltering=False,
+                       AllowUsingPivotTables=False)
+        
+        # Also protect workbook structure
+        book.api.Protect("adp123", Structure=True)
+        
+        # Protect TransactionData sheet but allow editing content
+        try:
+            data_sht = book.sheets["TransactionData"]
+            data_sht.api.Protect("adp123", 
+                                Contents=True,  # This allows editing cells but protects structure
+                                UserInterfaceOnly=True)
+        except:
+            pass
+        
+        book.save(OUT_FILE)
+        book.close()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        app3.quit()
+
+    print("✅ ADP_Interactive_Dashboard.xlsx created at:", OUT_FILE)
+    print("🔒 STRONG PROTECTION ENABLED:")
+    print("   - Password: adp123")
+    print("   - Only specific cells are editable (double-click won't work on locked cells)")
+    print("   - TransactionData sheet allows data editing but protects structure")
+    print("   - Workbook structure is protected")
+    print("")
+    print("📝 Editable cells (you can click and type in these):")
+    print("   - Client Number (C6), Company Name (C7)")
+    print("   - Contact details (F6, F7, F8, F9)")
+    print("   - Date fields (C12, C13)")
+    print("   - All cells in TransactionData sheet")
+    print("")
+    print("🚫 Locked cells (cannot be edited):")
+    print("   - Everything else! Titles, headers, totals, listbox area")
+
+if __name__ == "__main__":
+    build_xlsm()
