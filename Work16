@@ -1,0 +1,119 @@
+import os
+import xlwings as xw
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard_Final.xlsm")
+
+def build_xlsm():
+    # Remove existing file
+    if os.path.exists(OUT_FILE):
+        os.remove(OUT_FILE)
+
+    # Create a new workbook
+    app = xw.App(visible=False)
+    wb = app.books.add()
+    ws = wb.sheets[0]
+    ws.name = "Overview"
+
+    # Save once to ensure it’s valid XLSM
+    wb.api.SaveAs(OUT_FILE, FileFormat=52)
+    wb.close()
+    app.quit()
+
+    # Load with openpyxl for styling
+    wb = load_workbook(OUT_FILE, keep_vba=True)
+    ws = wb["Overview"]
+
+    # === Example header formatting ===
+    ws["B2"] = "YTD Results - USA"
+    ws["B2"].font = Font(size=14, bold=True, color="FFFFFF")
+    ws["B2"].fill = PatternFill("solid", fgColor="305496")
+    ws["B2"].alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.merge_cells("B2:G2")
+
+    # Contact Details section
+    ws["B5"] = "Contact Details"
+    ws["B5"].font = Font(size=12, bold=True, color="5B9BD5")
+
+    ws["C6"] = "Name:"
+    ws["C7"] = "Phone Number:"
+    ws["C12"] = "Email:"
+    ws["C13"] = "ADP Contact:"
+
+    # Transaction Overview section
+    ws["E12"] = "Transaction Overview"
+    ws["E12"].font = Font(size=12, bold=True, color="C00000")
+    ws.merge_cells("E12:G12")
+
+    ws["E13"] = "Record Type"
+    ws["F13"] = "Record Count"
+    ws["G13"] = "Total Records"
+    ws["G13"].font = Font(bold=True)
+
+    # Total formula
+    ws["G14"] = "=SUM(F15:F29)"
+
+    # Save changes
+    wb.save(OUT_FILE)
+    wb.close()
+
+    # === Now inject the ListBox via VBA macro ===
+    app = xw.App(visible=False)
+    wb = app.books.open(OUT_FILE)
+
+    vba_code = '''
+    Sub AddTransactionOverviewList()
+        Dim ws As Worksheet
+        Set ws = ThisWorkbook.Sheets("Overview")
+
+        ' Delete old ListBox if exists
+        Dim shp As Shape
+        For Each shp In ws.Shapes
+            If shp.Name = "TransactionList" Then shp.Delete
+        Next shp
+
+        ' Add ListBox inside Transaction Overview box (adjust size as needed)
+        Dim lb As OLEObject
+        Set lb = ws.OLEObjects.Add(ClassType:="Forms.ListBox.1", _
+            Left:=ws.Range("E15").Left, _
+            Top:=ws.Range("E15").Top, _
+            Width:=ws.Range("E15:F29").Width, _
+            Height:=ws.Range("E15:F29").Height)
+
+        lb.Name = "TransactionList"
+
+        ' Configure listbox
+        With lb.Object
+            .ColumnCount = 2
+            .ColumnHeads = False
+            .BoundColumn = 0
+            .ListStyle = fmListStylePlain
+            .IntegralHeight = True
+        End With
+
+        ' Fill with sample data
+        Dim i As Integer
+        For i = 1 To 20
+            lb.Object.AddItem "Record " & i
+            lb.Object.List(i - 1, 1) = i * 10
+        Next i
+    End Sub
+    '''
+
+    # Add module and paste macro
+    wb.api.VBProject.VBComponents.Add(1).CodeModule.AddFromString(vba_code)
+
+    # Run the macro
+    wb.api.Application.Run("AddTransactionOverviewList")
+
+    wb.save()
+    wb.close()
+    app.quit()
+
+    print("✅ Dashboard with Transaction Overview ListBox created:", OUT_FILE)
+
+
+if __name__ == "__main__":
+    build_xlsm()
