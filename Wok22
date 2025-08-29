@@ -1,0 +1,254 @@
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+
+OUT_FILE = os.path.abspath("ADP_Interactive_Dashboard.xlsx")
+
+def build_xlsm():
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+        except Exception as e:
+            print("Could not remove existing file:", e)
+            return
+
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        
+        # Create Overview sheet
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # Create TransactionData sheet if missing
+        try:
+            data_sht = wb.sheets("TransactionData")
+        except:
+            data_sht = wb.sheets.add("TransactionData")
+            data_sht.visible = False
+
+        # Layout adjustments
+        widths = [2, 18, 25, 2, 18, 18, 15, 15]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        row_heights = {
+            2: 30, 3: 30,
+            5: 25, 6: 22, 7: 22, 8: 22, 9: 22,
+            11: 25, 12: 22, 13: 22, 14: 22,
+            15: 25,
+            17: 120
+        }
+        for row, height in row_heights.items():
+            sht.api.Rows(row).RowHeight = height
+
+        app.api.ActiveWindow.DisplayGridlines = False
+        app.api.ActiveWindow.DisplayHeadings = False
+
+        # Title
+        header_color = (47, 84, 150)
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "ADP - PTD/YTD Results - USA"
+        sht.range("B2").api.Font.Size = 20
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = header_color
+        sht.range("B2").api.Font.Color = 0xFFFFFF
+        sht.range("B2").api.HorizontalAlignment = -4108
+        sht.range("B2").api.VerticalAlignment = -4108
+        sht.range("B2").api.BorderAround(1, 4)
+
+        # Sections
+        client_info_color = (240, 248, 255)
+        sht.range("B5:C9").color = client_info_color
+        sht.range("B5:C5").merge(); sht.range("B5").value = "👤 Client Information"
+        sht.range("B5").api.Font.Size = 12
+        sht.range("B5").api.Font.Bold = True
+        sht.range("B5").api.Font.Color = 0x2F5496
+        sht.range("B5").api.HorizontalAlignment = -4108
+
+        labels = ["Client Number:", "Company Name:", "Country:", "Language:"]
+        values = ["", "", "USA", "English"]
+        for i, (label, value) in enumerate(zip(labels, values), start=6):
+            sht.range(f"B{i}").value = label
+            sht.range(f"B{i}").api.Font.Bold = True
+            sht.range(f"C{i}").value = value
+            if value:
+                sht.range(f"C{i}").api.Font.Color = 0x2F5496
+
+        sht.range("E5:G9").color = client_info_color
+        sht.range("E5:G5").merge(); sht.range("E5").value = "📞 Contact Details"
+        sht.range("E5").api.Font.Size = 12
+        sht.range("E5").api.Font.Bold = True
+        sht.range("E5").api.Font.Color = 0x2F5496
+        sht.range("E5").api.HorizontalAlignment = -4108
+
+        contact_labels = ["Name:", "Phone Number:", "Email:", "ADP Contact:"]
+        for i, label in enumerate(contact_labels, start=6):
+            sht.range(f"E{i}").value = label
+            sht.range(f"E{i}").api.Font.Bold = True
+            sht.range(f"F{i}").value = ""
+            sht.range(f"F{i}:G{i}").merge()
+
+        period_color = (240, 248, 255)
+        sht.range("B11:C13").color = period_color
+        sht.range("B11:C11").merge(); sht.range("B11").value = "🗓️ Period"
+        sht.range("B11").api.Font.Size = 12
+        sht.range("B11").api.Font.Bold = True
+        sht.range("B11").api.Font.Color = 0x2F5496
+        sht.range("B11").api.HorizontalAlignment = -4108
+        sht.range("B12").value = "Date Received:"; sht.range("B12").api.Font.Bold = True
+        sht.range("C12").value = ""
+        sht.range("B13").value = "Date Processed:"; sht.range("B13").api.Font.Bold = True
+        sht.range("C13").value = ""
+
+        total_records_color = (220, 230, 245)
+        sht.range("B15:C15").color = total_records_color
+        sht.range("B15:C15").merge()
+        sht.range("B15").value = "Total Records: Calculating..."
+        sht.range("B15").api.Font.Bold = True
+        sht.range("B15").api.Font.Size = 12
+        sht.range("B15").api.Font.Color = 0x2F5496
+        sht.range("B15").api.HorizontalAlignment = -4108
+
+        transaction_color = (240, 248, 255)
+        sht.range("E11:G17").color = transaction_color
+        sht.range("E11:G11").merge(); sht.range("E11").value = "🧾 Transaction Overview"
+        sht.range("E11").api.Font.Size = 12
+        sht.range("E11").api.Font.Bold = True
+        sht.range("E11").api.Font.Color = 0x2F5496
+        sht.range("E11").api.HorizontalAlignment = -4108
+
+        for range_addr in ["B5:C9", "E5:G9", "B11:C13", "B15:C15", "E11:G17"]:
+            sht.range(range_addr).api.BorderAround(1, 1)
+
+        wb.save(OUT_FILE)
+        wb.close()
+    finally:
+        app.quit()
+
+    time.sleep(0.5)
+
+    # Lock/unlock cells
+    wb2 = load_workbook(OUT_FILE)
+    ws = wb2["Overview"]
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.protection = cell.protection.copy(locked=True)
+    editable_cells = ["C6","C7","F6","F7","F8","F9","C12","C13"]
+    for cell_ref in editable_cells:
+        ws[cell_ref].protection = ws[cell_ref].protection.copy(locked=False)
+    if "TransactionData" in wb2.sheetnames:
+        ws_data = wb2["TransactionData"]
+        for row in ws_data.iter_rows():
+            for cell in row:
+                cell.protection = cell.protection.copy(locked=False)
+    wb2.save(OUT_FILE)
+    wb2.close()
+
+    time.sleep(0.5)
+
+    # Add ListBox and Refresh Button
+    app3 = xw.App(visible=True)
+    try:
+        book = app3.books.open(OUT_FILE)
+        sht = book.sheets["Overview"]
+
+        try:
+            sht.api.Unprotect("adp123")
+        except:
+            pass
+
+        # Delete existing ListBox & Button
+        for name in ["lstTransactions", "btnRefresh"]:
+            try:
+                sht.api.OLEObjects(name).Delete()
+            except:
+                pass
+
+        # Insert ListBox
+        listbox = sht.api.OLEObjects().Add(ClassType="Forms.ListBox.1",
+                                           Left=sht.range("E12").left,
+                                           Top=sht.range("E12").top,
+                                           Width=sht.range("E11:G11").width - 5,
+                                           Height=100)
+        listbox.Name = "lstTransactions"
+        listbox.Object.MultiSelect = 0
+        listbox.Object.ColumnCount = 2
+        listbox.Object.ColumnWidths = "200;80"
+        listbox.Object.IntegralHeight = False
+        listbox.Object.ColumnHeads = False
+        listbox.Object.List = [["TransactionData","0"]]  # default placeholder
+        listbox.Object.ScrollBars = 3
+        listbox.Object.BackColor = 0xF0F8FF
+        listbox.Object.BorderColor = 0x2F5496
+        listbox.Object.BorderStyle = 1
+        listbox.Object.Font.Size = 10
+        listbox.Object.Font.Name = "Calibri"
+
+        # Insert Refresh Button
+        button = sht.api.OLEObjects().Add(ClassType="Forms.CommandButton.1",
+                                          Left=sht.range("E18").left,
+                                          Top=sht.range("E18").top,
+                                          Width=120,
+                                          Height=25)
+        button.Name = "btnRefresh"
+        button.Object.Caption = "🔄 Refresh"
+        button.Object.Font.Size = 10
+        button.Object.Font.Bold = True
+        button.Object.BackColor = 0xD9E1F2
+
+        # Inject VBA Macro for Refresh
+        vba_code = '''
+Sub RefreshListBox()
+    Dim ws As Worksheet
+    Dim lb As Object
+    Dim arr()
+    Dim i As Long
+    Dim total As Long
+    
+    Set lb = Worksheets("Overview").OLEObjects("lstTransactions").Object
+    lb.Clear
+    
+    i = 0
+    total = 0
+    For Each ws In ThisWorkbook.Sheets
+        If ws.Name <> "Overview" Then
+            Dim count As Long
+            count = Application.WorksheetFunction.CountA(ws.UsedRange.Rows)
+            If count > 0 Then
+                ReDim Preserve arr(1 To 2, 0 To i)
+                arr(1, i) = ws.Name
+                arr(2, i) = count
+                i = i + 1
+                total = total + count
+            End If
+        End If
+    Next ws
+    
+    If i > 0 Then
+        lb.ColumnCount = 2
+        lb.List = Application.Transpose(arr)
+    End If
+    
+    Worksheets("Overview").Range("B15").Value = "Total Records: " & i
+End Sub
+'''
+        book.api.VBProject.VBComponents("ThisWorkbook").CodeModule.AddFromString(vba_code)
+        button.Object.OnAction = "RefreshListBox"
+
+        sht.api.Protect("adp123", DrawingObjects=True, Contents=True, Scenarios=True, UserInterfaceOnly=True)
+        book.api.Protect("adp123", Structure=True)
+        book.save(OUT_FILE)
+        book.close()
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        app3.quit()
+
+    print("✅ Dashboard created with Refresh button!")
+    print("📋 Click '🔄 Refresh' to reload the ListBox with sheet data.")
+
+if __name__ == "__main__":
+    build_xlsm()
