@@ -1,0 +1,11 @@
+import os
+import time
+from adp_dashboard import refresh_dashboard, kill_excel_processes
+
+# Kill any Excel processes first
+kill_excel_processes()
+time.sleep(2)
+
+print("🔄 Refreshing ADP Dashboard...")
+refresh_dashboard()
+print("✅ Refresh complete! You can now open the Excel file.")
