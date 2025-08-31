@@ -1,0 +1,403 @@
+import os
+import time
+import xlwings as xw
+from openpyxl import load_workbook
+import psutil
+
+# Get the current directory and create the file path
+current_dir = os.getcwd()
+OUT_FILE = os.path.join(current_dir, "ADP_Interactive_Dashboard.xlsx")
+
+def kill_excel_processes():
+    """Force close any Excel processes"""
+    try:
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'] and 'excel' in proc.info['name'].lower():
+                proc.kill()
+                time.sleep(0.5)
+    except:
+        pass
+
+def count_rows_in_sheet(sheet):
+    """Count the number of non-empty rows in a sheet (excluding header)"""
+    try:
+        # Count non-empty rows by checking each cell in column A
+        row_count = 0
+        for i in range(2, 1000):  # Check up to row 1000
+            if sheet.range(f"A{i}").value is None:
+                break
+            row_count += 1
+        return row_count
+    except:
+        return 0
+
+def get_sheet_data(wb):
+    """Get all sheets and their row counts, excluding system sheets"""
+    sheet_data = []
+    total_records = 0
+    
+    # Sheets to exclude from the dashboard
+    exclude_sheets = ["Overview", "DashboardSettings", "TempData"]
+    
+    for sheet in wb.sheets:
+        sheet_name = sheet.name
+        if sheet_name not in exclude_sheets and not sheet_name.startswith("Sheet"):
+            row_count = count_rows_in_sheet(sheet)
+            sheet_data.append([sheet_name, row_count])
+            total_records += row_count
+    
+    # Sort alphabetically by sheet name
+    sheet_data.sort(key=lambda x: x[0])
+    
+    return sheet_data, total_records
+
+def refresh_dashboard():
+    """Refresh the dashboard with current data"""
+    if not os.path.exists(OUT_FILE):
+        print("❌ Excel file not found. Please create the dashboard first.")
+        return
+        
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.open(OUT_FILE)
+        sht = wb.sheets["Overview"]
+        
+        # Unprotect temporarily
+        try:
+            sht.api.Unprotect("adp123")
+        except:
+            pass
+        
+        # Clear existing data but keep headers
+        sht.range("E13:F100").clear_contents()
+        
+        # Get updated sheet data
+        sheet_data, total_records = get_sheet_data(wb)
+        
+        # Repopulate table
+        for i, (sheet_name, record_count) in enumerate(sheet_data, start=1):
+            sht.range(f"E{12 + i}").value = sheet_name
+            sht.range(f"F{12 + i}").value = record_count
+        
+        # Update total
+        sht.range("B15").value = f"Total Records: {total_records}"
+        
+        # Reapply protection with correct settings
+        try:
+            sht.api.Protect("adp123")
+        except:
+            pass
+        
+        wb.save()
+        wb.close()
+        print("✅ Dashboard refreshed successfully!")
+        print(f"📊 Total records: {total_records}")
+        for sheet_name, count in sheet_data:
+            print(f"   {sheet_name}: {count} records")
+        
+    except Exception as e:
+        print(f"❌ Error refreshing: {e}")
+    finally:
+        app.quit()
+
+def setup_cell_protection_xlwings():
+    """Set up cell protection using xlwings (proper Excel protection)"""
+    try:
+        kill_excel_processes()
+        time.sleep(2)
+        
+        app = xw.App(visible=False)
+        wb = app.books.open(OUT_FILE)
+        sht = wb.sheets["Overview"]
+        
+        # First, unprotect the sheet
+        try:
+            sht.api.Unprotect("adp123")
+        except:
+            pass
+        
+        # Unlock ALL cells first
+        sht.api.Cells.Locked = False
+        
+        # Now lock ALL text elements (titles, section names, labels, instructions)
+        # Only keep input boxes editable
+        protected_cells = [
+            # === MAIN TITLE ===
+            "B2", "B3",  # "ADP - Automated Workbook Analytics"
+            
+            # === CLIENT INFO SECTION ===
+            "B5",        # "👤 Client Information" section title
+            "B6", "B7", "B8", "B9",  # Client info labels
+            
+            # === CONTACT DETAILS SECTION ===
+            "E5",        # "📞 Contact Details" section title  
+            "E6", "E7", "E8", "E9",  # Contact details labels
+            
+            # === PERIOD SECTION ===
+            "B11",       # "🗓️ Period" section title
+            "B12", "B13",  # Period labels
+            
+            # === TOTAL RECORDS SECTION ===
+            "B15",       # "Total Records:" title
+            
+            # === WORKBOOK ANALYTICS SECTION ===
+            "E11",       # "📊 Workbook Analytics" section title
+            "E12", "F12",  # Table headers ("Record Type", "Record Count")
+            
+            # === INSTRUCTIONS ===
+            "H12", "H13", "H14", "H15",  # Instructions text
+            
+            # === TABLE DATA (sheet names) ===
+            # We'll protect the sheet names in the table too
+        ]
+        
+        # Add all sheet names in the table (E13, E14, E15, etc.)
+        for row in range(13, 30):  # Protect up to row 30
+            protected_cells.append(f"E{row}")
+        
+        for cell_ref in protected_cells:
+            try:
+                sht.range(cell_ref).api.Locked = True
+            except:
+                pass
+        
+        # Protect the sheet with password
+        sht.api.Protect("adp123")
+        
+        wb.save()
+        wb.close()
+        app.quit()
+        
+        print("🔒 Protection applied! All text elements are protected")
+        print("📝 Only input boxes are editable without password")
+        print("🔑 Password 'adp123' required to edit protected cells")
+        
+    except Exception as e:
+        print(f"❌ Error setting protection: {e}")
+
+def create_dashboard():
+    """Create the dashboard Excel file"""
+    # Kill any existing Excel processes first
+    kill_excel_processes()
+    time.sleep(2)
+    
+    if os.path.exists(OUT_FILE):
+        try:
+            os.remove(OUT_FILE)
+            time.sleep(1)
+        except:
+            print("⚠️ Could not remove existing file. It might be locked.")
+            kill_excel_processes()
+            time.sleep(2)
+            try:
+                os.remove(OUT_FILE)
+            except:
+                print("❌ Cannot remove existing file. Please close Excel and try again.")
+                return
+
+    app = xw.App(visible=False)
+    try:
+        wb = app.books.add()
+        sht = wb.sheets[0]
+        sht.name = "Overview"
+
+        # Create sample data sheets
+        sample_sheets = {
+            "Employees": [
+                ["EmployeeID", "Name", "Department", "Salary"],
+                ["E001", "John Doe", "HR", "50000"],
+                ["E002", "Jane Smith", "Finance", "60000"],
+                ["E003", "Mike Johnson", "IT", "55000"],
+                ["E004", "Sarah Wilson", "Marketing", "52000"]
+            ],
+            "Transactions": [
+                ["TransactionID", "Date", "Amount", "Type"],
+                ["T001", "2024-01-15", "1000", "Sale"],
+                ["T002", "2024-01-16", "2500", "Sale"],
+                ["T003", "2024-01-17", "500", "Refund"]
+            ],
+            "Inventory": [
+                ["ProductID", "Name", "Quantity", "Price"],
+                ["P001", "Laptop", "50", "1200"],
+                ["P002", "Mouse", "200", "25"],
+                ["P003", "Keyboard", "150", "45"],
+                ["P004", "Monitor", "75", "300"],
+                ["P005", "Headset", "100", "80"]
+            ]
+        }
+        
+        # Create the sample sheets
+        for sheet_name, data in sample_sheets.items():
+            new_sheet = wb.sheets.add(sheet_name)
+            for i, row in enumerate(data, start=1):
+                for j, value in enumerate(row, start=1):
+                    new_sheet.range(i, j).value = value
+            new_sheet.range("1:1").api.Font.Bold = True
+            new_sheet.range("1:1").color = (240, 248, 255)
+
+        # Setup Overview sheet formatting
+        widths = [2, 18, 25, 2, 18, 18, 15, 15]
+        for i, w in enumerate(widths, start=1):
+            sht.api.Columns(i).ColumnWidth = w
+
+        row_heights = {2: 30, 3: 30, 5: 25, 6: 22, 7: 22, 8: 22, 9: 22,
+                      11: 25, 12: 22, 13: 22, 14: 22, 15: 25, 17: 150}
+        for row, height in row_heights.items():
+            sht.api.Rows(row).RowHeight = height
+
+        app.api.ActiveWindow.DisplayGridlines = False
+        app.api.ActiveWindow.DisplayHeadings = False
+
+        # === TITLE ===
+        header_color = (47, 84, 150)
+        sht.range("B2:G3").merge()
+        sht.range("B2").value = "ADP - Automated Workbook Analytics"
+        sht.range("B2").api.Font.Size = 20
+        sht.range("B2").api.Font.Bold = True
+        sht.range("B2").color = header_color
+        sht.range("B2").api.Font.Color = 0xFFFFFF
+        sht.range("B2").api.HorizontalAlignment = -4108
+        sht.range("B2").api.VerticalAlignment = -4108
+        sht.range("B2").api.BorderAround(1, 4)
+
+        # === CLIENT INFO ===
+        client_info_color = (240, 248, 255)
+        sht.range("B5:C9").color = client_info_color
+        sht.range("B5:C5").merge()
+        sht.range("B5").value = "👤 Client Information"
+        sht.range("B5").api.Font.Size = 12
+        sht.range("B5").api.Font.Bold = True
+        sht.range("B5").api.Font.Color = 0x2F5496
+        sht.range("B5").api.HorizontalAlignment = -4108
+        
+        # Labels (protected) - Input boxes (editable)
+        labels = ["Client Number:", "Company Name:", "Country:", "Language:"]
+        for i, label in enumerate(labels, start=6):
+            sht.range(f"B{i}").value = label
+            sht.range(f"B{i}").api.Font.Bold = True
+            sht.range(f"C{i}").value = ""  # Input box - will be editable
+
+        # === CONTACT DETAILS ===
+        sht.range("E5:G9").color = client_info_color
+        sht.range("E5:G5").merge()
+        sht.range("E5").value = "📞 Contact Details"
+        sht.range("E5").api.Font.Size = 12
+        sht.range("E5").api.Font.Bold = True
+        sht.range("E5").api.Font.Color = 0x2F5496
+        sht.range("E5").api.HorizontalAlignment = -4108
+        
+        # Labels (protected) - Input boxes (editable)
+        contact_labels = ["Name:", "Phone Number:", "Email:", "ADP Contact:"]
+        for i, label in enumerate(contact_labels, start=6):
+            sht.range(f"E{i}").value = label
+            sht.range(f"E{i}").api.Font.Bold = True
+            sht.range(f"F{i}").value = ""  # Input box - will be editable
+            sht.range(f"F{i}:G{i}").merge()
+
+        # === PERIOD ===
+        period_color = (240, 248, 255)
+        sht.range("B11:C13").color = period_color
+        sht.range("B11:C11").merge()
+        sht.range("B11").value = "🗓️ Period"
+        sht.range("B11").api.Font.Size = 12
+        sht.range("B11").api.Font.Bold = True
+        sht.range("B11").api.Font.Color = 0x2F5496
+        sht.range("B11").api.HorizontalAlignment = -4108
+        
+        # Labels (protected) - Input boxes (editable)
+        sht.range("B12").value = "Date Received:"
+        sht.range("B12").api.Font.Bold = True
+        sht.range("C12").value = ""  # Input box - will be editable
+        
+        sht.range("B13").value = "Date Processed:"
+        sht.range("B13").api.Font.Bold = True
+        sht.range("C13").value = ""  # Input box - will be editable
+
+        # === TOTAL RECORDS ===
+        total_records_color = (220, 230, 245)
+        sht.range("B15:C15").color = total_records_color
+        sht.range("B15:C15").merge()
+        sht.range("B15").value = "Total Records: 12"  # Will be updated
+        sht.range("B15").api.Font.Bold = True
+        sht.range("B15").api.Font.Size = 12
+        sht.range("B15").api.Font.Color = 0x2F5496
+        sht.range("B15").api.HorizontalAlignment = -4108
+
+        # === WORKBOOK ANALYTICS ===
+        analytics_color = (240, 248, 255)
+        sht.range("E11:G17").color = analytics_color
+        sht.range("E11:G11").merge()
+        sht.range("E11").value = "📊 Workbook Analytics"
+        sht.range("E11").api.Font.Size = 12
+        sht.range("E11").api.Font.Bold = True
+        sht.range("E11").api.Font.Color = 0x2F5496
+        sht.range("E11").api.HorizontalAlignment = -4108
+        
+        # Create table headers
+        sht.range("E12").value = "Record Type"
+        sht.range("F12").value = "Record Count"
+        sht.range("E12:F12").api.Font.Bold = True
+        sht.range("E12:F12").color = (220, 230, 245)
+        sht.range("E12:F12").api.HorizontalAlignment = -4108
+        
+        # Get initial data and populate table
+        sheet_data, total_records = get_sheet_data(wb)
+        for i, (sheet_name, record_count) in enumerate(sheet_data, start=1):
+            sht.range(f"E{12 + i}").value = sheet_name
+            sht.range(f"F{12 + i}").value = record_count
+        
+        sht.range("B15").value = f"Total Records: {total_records}"
+        
+        # Add borders
+        for range_addr in ["B5:C9", "E5:G9", "B11:C13", "B15:C15", "E11:G17"]:
+            sht.range(range_addr).api.BorderAround(1, 1)
+        
+        table_end_row = 12 + len(sheet_data)
+        sht.range(f"E12:F{table_end_row}").api.BorderAround(1, 1)
+        for row in range(12, table_end_row + 1):
+            sht.range(f"E{row}:F{row}").api.Borders(9).Weight = 1
+
+        # Instructions
+        sht.range("H12").value = "📝 How to Refresh:"
+        sht.range("H13").value = "1. Close Excel file"
+        sht.range("H14").value = "2. Run: python refresh.py"
+        sht.range("H15").value = "3. Open file again"
+        
+        sht.range("H12:H15").api.Font.Bold = True
+        sht.range("H12:H15").color = (255, 255, 225)
+        
+        sht.activate()
+        app.api.ActiveWindow.Zoom = 85
+        
+        wb.save(OUT_FILE)
+        wb.close()
+        
+        print("✅ Dashboard created successfully!")
+        print(f"📍 Location: {OUT_FILE}")
+        
+    except Exception as e:
+        print(f"❌ Error creating dashboard: {e}")
+    finally:
+        app.quit()
+
+    # Setup protection using xlwings (proper Excel protection)
+    setup_cell_protection_xlwings()
+
+if __name__ == "__main__":
+    print("🚀 Creating ADP Interactive Dashboard...")
+    create_dashboard()
+    
+    print("\n" + "="*60)
+    print("📋 HOW TO USE:")
+    print("1. Open the Excel file")
+    print("2. Add data to editable boxes without password:")
+    print("   - Client Number, Company Name, Country, Language")
+    print("   - Name, Phone, Email, ADP Contact")  
+    print("   - Date Received, Date Processed")
+    print("3. Add/remove rows from data sheets")
+    print("4. Save and close Excel file")
+    print("5. Run: python refresh.py")
+    print("6. Open file again to see updated counts")
+    print("")
+    print("🔒 ALL text elements are protected with password 'adp123'")
+    print("📝 Only input boxes are freely editable")
